@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+publish/
+*.dll
+*.pdb
+*.exe
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# Test / coverage output
+TestResults/
+[Cc]overage/
+*.trx
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
