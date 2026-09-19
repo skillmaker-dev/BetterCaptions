@@ -81,6 +81,15 @@ namespace CsOverlay.Models
         public double CaptionLineGap { get; set; } = 0;
 
         /// <summary>
+        /// Maximum number of caption rows shown in the rolling window. The recent caption
+        /// text (the reader's lines joined) is word-wrapped and only the newest
+        /// CaptionMaxRows rows are displayed; as new words arrive older rows scroll off the
+        /// top. The overlay clamps this to a sane range (1..10) and caps the resulting
+        /// panel height so it never exceeds the work area.
+        /// </summary>
+        public int CaptionMaxRows { get; set; } = 3;
+
+        /// <summary>
         /// When true each caption bar centres its text; when false the text is left
         /// aligned (the default, matching the original look). Each bar auto-fits its own
         /// text, so for a single-row caption the text exactly fills the bar and the

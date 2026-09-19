@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CsOverlay Options"
         Width="440"
-        Height="430"
+        Height="470"
         MinWidth="400"
-        MinHeight="360"
+        MinHeight="390"
         WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True"
         Background="#FFF4F4F4"
@@ -155,6 +155,21 @@
                         VerticalAlignment="Center"
                         ValueChanged="FontSizeSlider_ValueChanged" />
                 <TextBlock x:Name="FontSizeValue" Grid.Column="2" Style="{StaticResource RowValue}" />
+            </Grid>
+
+            <Grid Margin="0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="72" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Max rows" Style="{StaticResource RowLabel}" />
+                <Slider x:Name="MaxRowsSlider" Grid.Column="1"
+                        Minimum="1" Maximum="10"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center"
+                        ValueChanged="MaxRowsSlider_ValueChanged" />
+                <TextBlock x:Name="MaxRowsValue" Grid.Column="2" Style="{StaticResource RowValue}" />
             </Grid>
 
             <CheckBox x:Name="CenterTextCheck" Content="Center text" Margin="0,10,0,0"

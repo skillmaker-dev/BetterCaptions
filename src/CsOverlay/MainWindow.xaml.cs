@@ -18,16 +18,17 @@ namespace CsOverlay
         private const double MinPanelWidth = 120.0;
         private const double DefaultPanelMaxWidth = 640.0;
 
-        // How many recent caption LINES from the reader are joined into the rolling text.
-        private const int MaxRenderedCaptionLines = 2;
+        // The caption is rendered as a rolling window of the configured number of wrapped
+        // ROWS (AppSettings.CaptionMaxRows): the recent caption text (the reader's lines
+        // joined) is word-wrapped and only the LAST rows are shown, so the newest words
+        // are always at the bottom and older words scroll off the top. There is no
+        // ellipsis/truncation anywhere. The count is clamped to this sane range so a
+        // hand-edited settings file cannot request zero rows or an absurd height, and the
+        // resulting panel height is additionally capped to the work area.
+        private const int MinCaptionRows = 1;
+        private const int MaxCaptionRows = 10;
 
-        // The caption is rendered as a rolling window of at most this many wrapped ROWS:
-        // the joined text is word-wrapped and only the LAST MaxDisplayedRows rows are
-        // shown, so the newest words are always at the bottom and older words scroll off
-        // the top. There is no ellipsis/truncation anywhere.
-        private const int MaxDisplayedRows = 3;
-
-        // Fallback only. The real content height is the fixed 3-row window derived in
+        // Fallback only. The real content height is the configured row window derived in
         // ComputeCaptionPanelHeight() from the applied metrics, so it cannot drift.
         private const double FallbackPanelHeight = 54.0;
 
@@ -68,10 +69,15 @@ namespace CsOverlay
         // size or the available width changes.
         private string _captionText = string.Empty;
 
-        // How many rows are currently visible (0..MaxDisplayedRows).
+        // How many rows are currently visible (0.._maxDisplayedRows).
         private int _visibleRowCount;
 
-        // Caption row rendering. A fixed pool of up to MaxDisplayedRows TextBlocks; each
+        // The configured rolling-window row count, clamped to MinCaptionRows..MaxCaptionRows
+        // and reduced if necessary so the window fits the work area. Recomputed by
+        // ApplyAppearanceSettings; drives the visible window, the row pool and the height.
+        private int _maxDisplayedRows = 3;
+
+        // Caption row rendering. A fixed pool of up to _maxDisplayedRows TextBlocks; each
         // holds exactly one already-wrapped row (NoWrap). The stack is bottom-aligned and
         // rows fill from the bottom, so the newest row is the last pool slot.
         private readonly List<TextBlock> _captionLines = new List<TextBlock>();
@@ -99,10 +105,10 @@ namespace CsOverlay
         private double _dragStartLeft;
         private double _dragStartTop;
 
-        // Panel resize state. The height is a fixed 3-row window, so the only resize
-        // control is the right-edge grip, which adjusts the MaxWidth cap. The panel's
-        // Margin (its top-left) is never touched while resizing. The panel's own Width
-        // stays unset so it keeps hugging its content.
+        // Panel resize state. The height is a fixed row window (configured max rows), so the
+        // only resize control is the right-edge grip, which adjusts the MaxWidth cap. The
+        // panel's Margin (its top-left) is never touched while resizing. The panel's own
+        // Width stays unset so it keeps hugging its content.
         private enum ResizeEdge
         {
             None,
@@ -354,17 +360,15 @@ namespace CsOverlay
                 return;
             }
 
-            // The reader publishes oldest-first. Join the newest MaxRenderedCaptionLines
-            // into one rolling text; older lines are dropped so the slab stays recent.
+            // The reader publishes oldest-first and supplies up to its own line cap (8).
+            // Join ALL of them into one rolling text: the row cap (CaptionMaxRows) is what
+            // now governs how much history is visible, not a fixed line limit.
             string[] safe = lines ?? Array.Empty<string>();
             int supplied = safe.Length;
-            int used = Math.Min(supplied, MaxRenderedCaptionLines);
-            int firstUsed = supplied - used;
 
-            var parts = new List<string>(used);
-            for (int i = 0; i < used; i++)
+            var parts = new List<string>(supplied);
+            foreach (string part in safe)
             {
-                string part = safe[firstUsed + i];
                 if (!string.IsNullOrWhiteSpace(part))
                 {
                     parts.Add(part.Trim());
@@ -388,7 +392,7 @@ namespace CsOverlay
 
             _lastNewestCaption = newest;
 
-            // Re-wrap the joined text and render the last MaxDisplayedRows rows.
+            // Re-wrap the joined text and render the last _maxDisplayedRows rows.
             RecomputeAndRenderRows();
 
             _hasCaptions = _visibleRowCount > 0;
@@ -402,9 +406,9 @@ namespace CsOverlay
 
         /// <summary>
         /// Word-wraps the current caption text to the panel width cap and renders the LAST
-        /// MaxDisplayedRows wrapped rows. Rows fill from the BOTTOM and unused rows are
-        /// collapsed, so the panel stays a fixed 3-row window and an unused row paints no
-        /// bar. Called whenever the text, font size or available width changes.
+        /// _maxDisplayedRows wrapped rows. Rows fill from the BOTTOM and unused rows are
+        /// collapsed, so the panel stays a fixed window of that many rows and an unused row
+        /// paints no bar. Called whenever the text, row count, font size or width changes.
         /// </summary>
         private void RecomputeAndRenderRows()
         {
@@ -422,11 +426,11 @@ namespace CsOverlay
 
             List<string> allRows = WrapRows(_captionText, textArea);
 
-            int visible = Math.Min(allRows.Count, MaxDisplayedRows);
+            int visible = Math.Min(allRows.Count, _maxDisplayedRows);
             int firstVisible = allRows.Count - visible;
             _visibleRowCount = visible;
 
-            EnsureRowBlocks(visible > 0 ? MaxDisplayedRows : 0);
+            EnsureRowBlocks(visible > 0 ? _maxDisplayedRows : 0);
 
             int poolCount = _captionLines.Count;
 
@@ -763,10 +767,10 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Applies the saved width cap (clamped) and the fixed 3-row height window.
+        /// Applies the saved width cap (clamped) and the configured row-window height.
         /// Width is left unset so the slab auto-fits its (already word-wrapped) rows
         /// between MinWidth and MaxWidth; the height comes from MinHeight, which is the
-        /// fixed row window, so the panel stops resizing as captions change.
+        /// configured row window, so the panel stops resizing as captions change.
         /// </summary>
         private void ApplyPanelSize()
         {
@@ -789,9 +793,9 @@ namespace CsOverlay
         /// <summary>
         /// Applies the persisted appearance settings to the caption rows immediately: the
         /// text/background brushes, the uniform font size / line height, the caption text
-        /// alignment, and the fixed 3-row panel height. Called at startup and whenever a
-        /// setting changes. Re-wraps the rolling rows because the font size and row width
-        /// can change.
+        /// alignment, the rolling-window row count, and the panel row-window height. Called
+        /// at startup and whenever a setting changes. Re-wraps the rolling rows because the
+        /// row count, font size and row width can change.
         ///
         /// Panel WIDTH is deliberately NOT touched here. It is owned by ApplyPanelSize(),
         /// which runs only on startup and when the user drags a resize grip; re-running it
@@ -812,6 +816,11 @@ namespace CsOverlay
             _rowTypeface = new Typeface(
                 GetStyleFontFamily(_rowStyle), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             _captionLineGap = Math.Max(0, settings.CaptionLineGap);
+
+            // The configured rolling-window row count, clamped to a sane range and reduced
+            // if necessary so the window fits the work area. Set before the re-wrap and the
+            // height, both of which depend on it.
+            _maxDisplayedRows = ClampCaptionRowCount(settings.CaptionMaxRows);
 
             // Caption-row text alignment, applied to every row in ApplyRowAppearance.
             _captionTextCentered = settings.CaptionTextCentered;
@@ -845,9 +854,9 @@ namespace CsOverlay
             // instead of their hardcoded StatusBar defaults.
             ApplyStatusAppearance();
 
-            // The fixed 3-row window follows the font metrics applied above, so it belongs
-            // to the appearance path. MinWidth/MaxWidth/alignment/margin are left untouched
-            // here: those belong to the size/placement paths.
+            // The configured row window follows the font metrics and row count applied
+            // above, so it belongs to the appearance path. MinWidth/MaxWidth/alignment/
+            // margin are left untouched here: those belong to the size/placement paths.
             OverlayPanel.MinHeight = ComputeCaptionPanelHeight();
 
             // The centre setting now lives in the Options window. Route any actual
@@ -958,25 +967,61 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// The panel's fixed content height: a window of MaxDisplayedRows single rows (each
-        /// = the applied LineHeight + its vertical bar padding) plus the gap BETWEEN rows
-        /// plus the caption-area padding. Derived from the numbers actually applied so it
-        /// cannot drift. Because the rendered content is capped at exactly this many rows
-        /// and unused rows are collapsed, the panel height is fixed and stops resizing as
-        /// captions change; a 3-row window can only ever trim whole rows.
+        /// The panel content height for a given row count: rows x (LineHeight + row
+        /// vertical padding) + Gap x (rows - 1) + caption-area padding. Derived from the
+        /// numbers actually applied so it cannot drift.
         /// </summary>
-        private double ComputeCaptionPanelHeight()
+        private double ComputeCaptionPanelHeightForRows(int rows)
         {
             double lineHeight = _captionLineHeight > 0 ? _captionLineHeight : GetStyleLineHeight(_rowStyle);
             double rowHeight = lineHeight + GetStylePaddingVertical(_rowStyle);
             double chrome = CaptionArea.Padding.Top + CaptionArea.Padding.Bottom;
 
-            // Gaps sit BETWEEN rows, so there are MaxDisplayedRows - 1 of them.
-            double height = (MaxDisplayedRows * rowHeight)
-                          + (_captionLineGap * (MaxDisplayedRows - 1))
-                          + chrome;
+            // Gaps sit BETWEEN rows, so there is one fewer than the row count.
+            double gaps = Math.Max(0, rows - 1) * _captionLineGap;
+            return (rows * rowHeight) + gaps + chrome;
+        }
+
+        /// <summary>
+        /// The panel's fixed content height for the configured row window, capped to the
+        /// work area so it can never exceed the screen. Because the rendered content is
+        /// capped at exactly this many rows and unused rows are collapsed, the height is
+        /// fixed and stops resizing as captions change; line advance stays exact, so the
+        /// window trims whole rows only and never slices a partial row.
+        /// </summary>
+        private double ComputeCaptionPanelHeight()
+        {
+            double height = ComputeCaptionPanelHeightForRows(_maxDisplayedRows);
+
+            double workHeight = SystemParameters.WorkArea.Height;
+            if (workHeight > 0)
+            {
+                height = Math.Min(height, workHeight);
+            }
 
             return height > 0 ? height : FallbackPanelHeight;
+        }
+
+        /// <summary>
+        /// Clamps the requested row count to MinCaptionRows..MaxCaptionRows, then reduces
+        /// it further (down to MinCaptionRows) if the resulting window would still be taller
+        /// than the work area. Reducing the ROW COUNT rather than merely clipping the height
+        /// keeps every displayed row whole, so no glyph is ever sliced.
+        /// </summary>
+        private int ClampCaptionRowCount(int requested)
+        {
+            int rows = Math.Clamp(requested, MinCaptionRows, MaxCaptionRows);
+
+            double workHeight = SystemParameters.WorkArea.Height;
+            if (workHeight > 0)
+            {
+                while (rows > MinCaptionRows && ComputeCaptionPanelHeightForRows(rows) > workHeight)
+                {
+                    rows--;
+                }
+            }
+
+            return rows;
         }
 
         private static double GetStyleLineHeight(Style style)

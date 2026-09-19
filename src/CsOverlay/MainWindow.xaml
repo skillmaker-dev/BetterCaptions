@@ -86,10 +86,10 @@
                     Grid.Row="0"
                     Padding="0">
                 <Grid ClipToBounds="True">
-                    <!-- Up to MaxDisplayedRows already-wrapped rows are added here
-                         (oldest first), bottom-aligned so the newest row sits at the
-                         bottom. Unused rows are collapsed, so they take no space and
-                         paint no bar. -->
+                    <!-- Up to the configured max row count (_maxDisplayedRows) of
+                         already-wrapped rows are added here (oldest first), bottom-aligned
+                         so the newest row sits at the bottom. Unused rows are collapsed, so
+                         they take no space and paint no bar. -->
                     <StackPanel x:Name="CaptionLinesPanel"
                                 VerticalAlignment="Bottom" />
 

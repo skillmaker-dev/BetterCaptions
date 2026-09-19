@@ -61,6 +61,9 @@ namespace CsOverlay
             FontSizeSlider.Value = Math.Clamp(settings.CaptionFontSize, FontSizeSlider.Minimum, FontSizeSlider.Maximum);
             FontSizeValue.Text = ((int)Math.Round(FontSizeSlider.Value)).ToString();
 
+            MaxRowsSlider.Value = Math.Clamp(settings.CaptionMaxRows, MaxRowsSlider.Minimum, MaxRowsSlider.Maximum);
+            MaxRowsValue.Text = ((int)Math.Round(MaxRowsSlider.Value)).ToString();
+
             CenterTextCheck.IsChecked = settings.CaptionTextCentered;
             CenterPanelCheck.IsChecked = settings.PanelCenteredHorizontally;
         }
@@ -264,6 +267,18 @@ namespace CsOverlay
             NotifyChanged();
         }
 
+        private void MaxRowsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.CaptionMaxRows = (int)Math.Round(MaxRowsSlider.Value);
+            MaxRowsValue.Text = ((int)Math.Round(MaxRowsSlider.Value)).ToString();
+            NotifyChanged();
+        }
+
         // ------------------------------------------------------------------
         // Checkboxes
         // ------------------------------------------------------------------
@@ -280,11 +295,8 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Shares <see cref="AppSettings.PanelCenteredHorizontally"/> with the overlay's
-        /// own hover-revealed "center" toggle: both write the same setting. A change made
-        /// here live-applies (the overlay toggle is re-synced and the panel re-placed); a
-        /// change made via the overlay toggle does NOT refresh this checkbox until the
-        /// Options window is reopened (there is deliberately no two-way binding).
+        /// Writes <see cref="AppSettings.PanelCenteredHorizontally"/>; a change here
+        /// live-applies (the overlay re-places the panel through its placement path).
         /// </summary>
         private void CenterPanelCheck_Changed(object sender, RoutedEventArgs e)
         {
