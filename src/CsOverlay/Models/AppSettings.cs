@@ -98,6 +98,14 @@ namespace CsOverlay.Models
         /// </summary>
         public bool CaptionTextCentered { get; set; } = false;
 
+        /// <summary>
+        /// When true, CsOverlay minimizes the Windows Live Captions window (and marks it as
+        /// a tool window so it leaves the taskbar/Alt-Tab) while the speech engine and its
+        /// UI Automation tree keep running, so only the overlay's own captions are visible.
+        /// Restored on exit. Default false.
+        /// </summary>
+        public bool HideLiveCaptionsWindow { get; set; } = false;
+
         /// <summary>When true the overlay is only shown while the game window exists.</summary>
         public bool ShowOnlyWhenGameRunning { get; set; } = false;
 

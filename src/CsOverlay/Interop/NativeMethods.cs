@@ -93,6 +93,35 @@ namespace CsOverlay.Interop
         [DllImport("user32.dll")]
         public static extern bool IsIconic(IntPtr hWnd);
 
+        // --- Window showing / ownership -------------------------------------
+
+        public const int SW_MINIMIZE = 6;
+        public const int SW_RESTORE = 9;
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        // --- Virtual screen metrics (PHYSICAL pixels) -----------------------
+        // These match GetWindowRect/SetWindowPos units, unlike SystemParameters.* which
+        // are DIPs.
+
+        public const int SM_XVIRTUALSCREEN = 76;
+        public const int SM_YVIRTUALSCREEN = 77;
+        public const int SM_CXVIRTUALSCREEN = 78;
+        public const int SM_CYVIRTUALSCREEN = 79;
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 

@@ -16,6 +16,14 @@ namespace CsOverlay
         private GameWindowTracker? _tracker;
         private HotkeyService? _hotkey;
         private LiveCaptionReader? _captions;
+        private LiveCaptionsWindowHider? _captionsHider;
+
+        // Last Live Captions hiding state we acted on, so ApplyLiveCaptionsHiding() only
+        // reacts to a real transition of the setting or a changed target window instead of
+        // re-issuing window calls on every unrelated settings change. UI thread only.
+        private bool _hideLiveCaptionsApplied;
+        private IntPtr _hideLiveCaptionsHandle = IntPtr.Zero;
+
         private SettingsWindow? _settingsWindow;
 
         public SettingsService SettingsService =>
@@ -55,7 +63,17 @@ namespace CsOverlay
             _captions = new LiveCaptionReader(Dispatcher);
             _captions.LinesChanged += lines => _mainWindow?.SetCaptionLines(lines);
             _captions.StatusChanged += status => _mainWindow?.SetCaptionStatus(status);
+
+            // Hides the Live Captions window (its speech engine keeps running) when the
+            // user asks for it, so only the overlay's own captions are visible.
+            _captionsHider = new LiveCaptionsWindowHider();
+            _captions.CaptionsWindowChanged += OnCaptionsWindowChanged;
+
             _captions.Start();
+
+            // Apply the persisted preference now; if Live Captions is not up yet,
+            // OnCaptionsWindowChanged applies it as soon as its window appears.
+            ApplyLiveCaptionsHiding();
 
             // Force handle creation so the global hotkey can be registered before the
             // overlay is ever shown. The window itself remains hidden.
@@ -79,6 +97,11 @@ namespace CsOverlay
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // ALWAYS undo our Live Captions window change before exiting, so the user's
+            // system is never left modified. The restore runs off-thread with a BOUNDED wait,
+            // so a slow or unresponsive target can never hang shutdown.
+            _captionsHider?.RestoreAndWait(1500);
+
             _captions?.Stop();
             _captions?.Dispose();
             _hotkey?.Dispose();
@@ -152,6 +175,73 @@ namespace CsOverlay
 
             // Re-apply click-through gating with the new preference.
             _mainWindow.SetClickThrough(settings.ClickThroughWhenIdle && !_mainWindow.IsOverlayVisible);
+
+            // Hide or restore the Live Captions window when that preference changed.
+            ApplyLiveCaptionsHiding();
+        }
+
+        /// <summary>
+        /// Hides or restores the Windows Live Captions window according to the current
+        /// setting. Acts ONLY on an actual transition of the setting, or when the target
+        /// window genuinely changed (Live Captions started or restarted) - so unrelated
+        /// settings changes (colours, gap, font size, ...) no longer re-issue window calls.
+        /// The hider is idempotent as a safety net.
+        /// </summary>
+        private void ApplyLiveCaptionsHiding()
+        {
+            if (_settingsService is null || _captionsHider is null || _captions is null)
+            {
+                return;
+            }
+
+            bool wantHide = _settingsService.Settings.HideLiveCaptionsWindow;
+            IntPtr handle = _captions.CaptionsWindowHandle;
+
+            bool settingChanged = wantHide != _hideLiveCaptionsApplied;
+            bool handleChanged = handle != IntPtr.Zero && handle != _hideLiveCaptionsHandle;
+
+            if (!settingChanged && !handleChanged)
+            {
+                return; // nothing relevant changed: do not touch the window
+            }
+
+            if (wantHide)
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    _captionsHider.Hide(handle);
+                    _hideLiveCaptionsHandle = handle;
+                }
+
+                // Mark applied even when the window is not up yet: OnCaptionsWindowChanged
+                // hides it the moment it appears.
+                _hideLiveCaptionsApplied = true;
+            }
+            else
+            {
+                _captionsHider.Restore();
+                _hideLiveCaptionsApplied = false;
+                _hideLiveCaptionsHandle = IntPtr.Zero;
+            }
+        }
+
+        /// <summary>
+        /// Applies the hiding preference whenever the Live Captions window is found,
+        /// appears later, or changes (e.g. the app was restarted).
+        /// </summary>
+        private void OnCaptionsWindowChanged(IntPtr handle)
+        {
+            if (_settingsService is null || _captionsHider is null || handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            if (_settingsService.Settings.HideLiveCaptionsWindow)
+            {
+                _captionsHider.Hide(handle);
+                _hideLiveCaptionsHandle = handle;
+                _hideLiveCaptionsApplied = true;
+            }
         }
 
         /// <summary>

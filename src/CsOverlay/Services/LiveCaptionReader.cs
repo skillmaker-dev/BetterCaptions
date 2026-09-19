@@ -63,6 +63,11 @@ namespace CsOverlay.Services
         // UIA state (only touched by a worker thread).
         private AutomationElement? _cachedTextElement;
 
+        // The resolved Live Captions TOP-LEVEL window handle (the same window this reader
+        // already finds to locate the caption element). Stored as bits so it can be read
+        // and written atomically across the worker and UI threads.
+        private long _captionsWindowHandleBits;
+
         // Published state.
         private volatile string _status = StatusStarting;
         private volatile bool _available;
@@ -80,6 +85,20 @@ namespace CsOverlay.Services
 
         /// <summary>Raised on the UI thread when the status message changes.</summary>
         public event Action<string>? StatusChanged;
+
+        /// <summary>
+        /// Raised on the UI thread when the Live Captions top-level window handle becomes
+        /// available, changes (e.g. the app restarted), or is lost (reported as
+        /// <see cref="IntPtr.Zero"/>). Lets a consumer hide that window without doing its
+        /// own search.
+        /// </summary>
+        public event Action<IntPtr>? CaptionsWindowChanged;
+
+        /// <summary>
+        /// The resolved Live Captions top-level window handle, or <see cref="IntPtr.Zero"/>
+        /// when it has not been found (yet).
+        /// </summary>
+        public IntPtr CaptionsWindowHandle => new IntPtr(Interlocked.Read(ref _captionsWindowHandleBits));
 
         /// <summary>True when the caption text element has been located at least once.</summary>
         public bool IsAvailable => _available;
@@ -321,6 +340,7 @@ namespace CsOverlay.Services
             if (process is null)
             {
                 _available = false;
+                UpdateCaptionsWindowHandle(IntPtr.Zero);
                 PublishStatus(StatusNotRunning, Volatile.Read(ref _generation));
                 retryDelayMs = ProcessMissingRetryMs;
                 return null;
@@ -343,6 +363,10 @@ namespace CsOverlay.Services
                 retryDelayMs = ProcessMissingRetryMs;
                 return null;
             }
+
+            // Publish the resolved top-level handle (once, on change) so a consumer can
+            // hide that window. No second search is performed anywhere.
+            UpdateCaptionsWindowHandle(handle);
 
             try
             {
@@ -508,6 +532,18 @@ namespace CsOverlay.Services
 
             // Marshal back to the UI thread; never raise on the worker thread.
             _dispatcher.BeginInvoke(action);
+        }
+
+        private void UpdateCaptionsWindowHandle(IntPtr handle)
+        {
+            long value = handle.ToInt64();
+            if (Interlocked.Read(ref _captionsWindowHandleBits) == value)
+            {
+                return;
+            }
+
+            Interlocked.Exchange(ref _captionsWindowHandleBits, value);
+            Post(() => CaptionsWindowChanged?.Invoke(handle));
         }
 
         private void SleepInterruptibly(int milliseconds)

@@ -94,6 +94,7 @@ namespace CsOverlay
 
             CenterTextCheck.IsChecked = settings.CaptionTextCentered;
             CenterPanelCheck.IsChecked = settings.PanelCenteredHorizontally;
+            HideLiveCaptionsCheck.IsChecked = settings.HideLiveCaptionsWindow;
 
             RenderPreview();
         }
@@ -339,6 +340,21 @@ namespace CsOverlay
             }
 
             _settingsService.Settings.PanelCenteredHorizontally = CenterPanelCheck.IsChecked == true;
+            NotifyChanged();
+        }
+
+        /// <summary>
+        /// Writes <see cref="AppSettings.HideLiveCaptionsWindow"/>; a change here is
+        /// live-applied by the app (it hides or restores the Live Captions window).
+        /// </summary>
+        private void HideLiveCaptionsCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.HideLiveCaptionsWindow = HideLiveCaptionsCheck.IsChecked == true;
             NotifyChanged();
         }
 

@@ -208,6 +208,9 @@
                 <CheckBox x:Name="CenterTextCheck" Content="Center text" Margin="0,10,0,0"
                           Checked="CenterTextCheck_Changed" Unchecked="CenterTextCheck_Changed" />
 
+                <CheckBox x:Name="HideLiveCaptionsCheck" Content="Hide the Windows Live Captions window" Margin="0,10,0,0"
+                          Checked="HideLiveCaptionsCheck_Changed" Unchecked="HideLiveCaptionsCheck_Changed" />
+
                 <TextBlock Text="Panel" Style="{StaticResource SectionHeader}" />
 
                 <CheckBox x:Name="CenterPanelCheck" Content="Center panel on screen" Margin="0,2,0,0"
