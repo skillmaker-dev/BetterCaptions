@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -22,29 +21,13 @@ namespace CsOverlay
         // ROWS (AppSettings.CaptionMaxRows): the recent caption text (the reader's lines
         // joined) is word-wrapped and only the LAST rows are shown, so the newest words
         // are always at the bottom and older words scroll off the top. There is no
-        // ellipsis/truncation anywhere. The count is clamped to this sane range so a
-        // hand-edited settings file cannot request zero rows or an absurd height, and the
-        // resulting panel height is additionally capped to the work area.
-        private const int MinCaptionRows = 1;
-        private const int MaxCaptionRows = 10;
+        // ellipsis/truncation anywhere. The SHARED rules (font/row bounds, line-height
+        // ratio, row chrome, wrapping and the window cap) live in CaptionRenderRules /
+        // CaptionTextWrapper so the Options preview uses the exact same ones.
 
         // Fallback only. The real content height is the configured row window derived in
         // ComputeCaptionPanelHeight() from the applied metrics, so it cannot drift.
         private const double FallbackPanelHeight = 54.0;
-
-        // Bounds and the dimming scale for the live appearance settings. Every row shares
-        // one font size; only the colour tier differs (see ApplyRowAppearance).
-        private const double MinCaptionFontSize = 12.0;
-        private const double MaxCaptionFontSize = 40.0;
-        private const double OlderTextAlphaScale = 0.75;
-
-        // Line box height as a multiple of the font size, applied to both bars. Kept
-        // TIGHT on purpose: the font-size control must read as a glyph-size control, not
-        // as a line-spacing control. Segoe UI's visible Latin extent is about 1.0 em
-        // (roughly 0.75 em ascent + 0.25 em descent), so a 1.2 em line box leaves ~0.2 em
-        // of headroom and ascenders, descenders and accented capitals cannot be clipped at
-        // any size in the 12-40 range. (The old 1.3 ratio was the font's full leading.)
-        private const double TightLineHeightRatio = 1.2;
 
         private static readonly Color DefaultCaptionBackgroundColor = Color.FromArgb(0x8C, 0, 0, 0);
 
@@ -72,8 +55,8 @@ namespace CsOverlay
         // How many rows are currently visible (0.._maxDisplayedRows).
         private int _visibleRowCount;
 
-        // The configured rolling-window row count, clamped to MinCaptionRows..MaxCaptionRows
-        // and reduced if necessary so the window fits the work area. Recomputed by
+        // The configured rolling-window row count, clamped to CaptionRenderRules.MinRows..
+        // MaxRows and reduced if necessary so the window fits the work area. Recomputed by
         // ApplyAppearanceSettings; drives the visible window, the row pool and the height.
         private int _maxDisplayedRows = 3;
 
@@ -81,7 +64,6 @@ namespace CsOverlay
         // holds exactly one already-wrapped row (NoWrap). The stack is bottom-aligned and
         // rows fill from the bottom, so the newest row is the last pool slot.
         private readonly List<TextBlock> _captionLines = new List<TextBlock>();
-        private readonly Style _rowStyle;
 
         // Applied appearance, recomputed by ApplyAppearanceSettings. Every row shares
         // these; the panel height window is derived from them.
@@ -133,7 +115,6 @@ namespace CsOverlay
 
             // No window-level Opacity is applied; only the panel brush is slightly
             // translucent, so the text stays fully opaque.
-            _rowStyle = (Style)FindResource("CaptionRow");
 
             // Apply the persisted appearance at startup. Size, placement and the centre
             // checkbox are applied in OnSourceInitialized once the canvas size is known.
@@ -422,9 +403,11 @@ namespace CsOverlay
             // come out a hair wider than the measured width and clip at the panel edge.
             // The panel still auto-fits to the widest VISIBLE row, so a short caption stays
             // narrow rather than becoming full-width.
-            double textArea = Math.Max(1.0, CurrentWrapWidth() - GetStylePaddingHorizontal(_rowStyle) - 1.0);
+            double textArea = Math.Max(1.0, CurrentWrapWidth() - CaptionRenderRules.RowPaddingHorizontal - 1.0);
 
-            List<string> allRows = WrapRows(_captionText, textArea);
+            // The ONE wrap implementation, shared with the Options preview.
+            List<string> allRows = CaptionTextWrapper.Wrap(
+                _captionText, textArea, _rowTypeface, _captionFontSize, PixelsPerDip);
 
             int visible = Math.Min(allRows.Count, _maxDisplayedRows);
             int firstVisible = allRows.Count - visible;
@@ -456,133 +439,8 @@ namespace CsOverlay
             }
         }
 
-        /// <summary>
-        /// Greedy word-wrap into rows that fit the available text width. Never truncates:
-        /// a single word wider than the row is hard-split across rows so the whole word is
-        /// still shown. Empty/whitespace text yields no rows.
-        /// </summary>
-        private List<string> WrapRows(string text, double maxRowTextWidth)
-        {
-            var rows = new List<string>();
-
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return rows;
-            }
-
-            string[] words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            string line = string.Empty;
-
-            foreach (string word in words)
-            {
-                if (line.Length == 0)
-                {
-                    if (MeasureTextWidth(word) <= maxRowTextWidth)
-                    {
-                        line = word;
-                    }
-                    else
-                    {
-                        AppendHardSplit(word, maxRowTextWidth, rows, out line);
-                    }
-
-                    continue;
-                }
-
-                string candidate = line + " " + word;
-                if (MeasureTextWidth(candidate) <= maxRowTextWidth)
-                {
-                    line = candidate;
-                    continue;
-                }
-
-                rows.Add(line);
-
-                if (MeasureTextWidth(word) <= maxRowTextWidth)
-                {
-                    line = word;
-                }
-                else
-                {
-                    AppendHardSplit(word, maxRowTextWidth, rows, out line);
-                }
-            }
-
-            if (line.Length > 0)
-            {
-                rows.Add(line);
-            }
-
-            return rows;
-        }
-
-        /// <summary>
-        /// Splits a single word that is wider than one row. Full chunks are added to
-        /// <paramref name="rows"/> and the trailing fragment is returned as the pending
-        /// line. At least one character is always consumed, so a very narrow panel cannot
-        /// loop forever.
-        /// </summary>
-        private void AppendHardSplit(string word, double maxRowTextWidth, List<string> rows, out string remainder)
-        {
-            int start = 0;
-
-            while (start < word.Length)
-            {
-                int take = 0;
-                for (int len = 1; start + len <= word.Length; len++)
-                {
-                    if (MeasureTextWidth(word.Substring(start, len)) <= maxRowTextWidth)
-                    {
-                        take = len;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-
-                if (take == 0)
-                {
-                    take = 1;
-                }
-
-                string piece = word.Substring(start, take);
-                start += take;
-
-                if (start < word.Length)
-                {
-                    rows.Add(piece);
-                }
-                else
-                {
-                    remainder = piece;
-                    return;
-                }
-            }
-
-            remainder = string.Empty;
-        }
-
-        private double MeasureTextWidth(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-            {
-                return 0.0;
-            }
-
-            // Real DPI from the visual so the measurement matches what TextBlock renders.
-            double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            var formatted = new FormattedText(
-                text,
-                CultureInfo.CurrentUICulture,
-                FlowDirection.LeftToRight,
-                _rowTypeface,
-                _captionFontSize,
-                Brushes.Black,
-                pixelsPerDip);
-
-            return formatted.Width;
-        }
+        /// <summary>The render DPI of this visual, used for shared text measurement.</summary>
+        private double PixelsPerDip => VisualTreeHelper.GetDpi(this).PixelsPerDip;
 
         /// <summary>
         /// The width the caption text is wrapped to: the panel's current max-width cap,
@@ -810,11 +668,11 @@ namespace CsOverlay
 
             // Metrics: every row uses the SAME font size and the same tight line height.
             // CaptionLineGap is the ONLY source of space between rows.
-            double captionFontSize = Math.Clamp(settings.CaptionFontSize, MinCaptionFontSize, MaxCaptionFontSize);
+            double captionFontSize = Math.Clamp(settings.CaptionFontSize, CaptionRenderRules.MinFontSize, CaptionRenderRules.MaxFontSize);
             _captionFontSize = captionFontSize;
-            _captionLineHeight = captionFontSize * TightLineHeightRatio;
+            _captionLineHeight = captionFontSize * CaptionRenderRules.TightLineHeightRatio;
             _rowTypeface = new Typeface(
-                GetStyleFontFamily(_rowStyle), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+                CaptionRenderRules.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             _captionLineGap = Math.Max(0, settings.CaptionLineGap);
 
             // The configured rolling-window row count, clamped to a sane range and reduced
@@ -828,7 +686,7 @@ namespace CsOverlay
             // Brushes. The older line uses the SAME hue with alpha scaled, so the
             // emphasis hierarchy survives any colour the user picks.
             Color textColor = ParseColor(settings.CaptionTextColor, Colors.White);
-            byte olderAlpha = (byte)Math.Round(textColor.A * OlderTextAlphaScale);
+            byte olderAlpha = (byte)Math.Round(textColor.A * CaptionRenderRules.OlderTextAlphaScale);
 
             _newestTextBrush = CreateFrozenBrush(textColor);
             _olderTextBrush = CreateFrozenBrush(Color.FromArgb(olderAlpha, textColor.R, textColor.G, textColor.B));
@@ -871,23 +729,23 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Applies the uniform row appearance. Every row uses the SAME font size, line
-        /// height and weight; only the colour tier differs - the bottom (newest) row is
-        /// brightest and the rows above it use the dimmer history brush. There is no
-        /// trimming: each row is already a single wrapped line (NoWrap). The gap is a
-        /// bottom margin on every row except the bottom one.
+        /// Applies the SHARED row appearance (CaptionRenderRules.ApplyRow) so the overlay and
+        /// the Options preview render identical bars: a fitted bar with its own background +
+        /// padding, one line (no trimming), exact line boxes, the gap as a bottom margin, the
+        /// colour tier (bottom/newest row brightest, rows above dimmer), and the
+        /// CaptionTextCentered alignment (centred, or flush-left when off).
         /// </summary>
         private void ApplyRowAppearance(TextBlock row, bool isBottomRow)
         {
-            row.FontSize = _captionFontSize;
-            row.LineHeight = _captionLineHeight;
-            row.FontWeight = FontWeights.Normal;
-            row.Foreground = isBottomRow ? _newestTextBrush : _olderTextBrush;
-            row.Background = _captionBackgroundBrush;
-            row.TextAlignment = _captionTextCentered ? TextAlignment.Center : TextAlignment.Left;
-            row.TextWrapping = TextWrapping.NoWrap;
-            row.TextTrimming = TextTrimming.None;
-            row.Margin = new Thickness(0, 0, 0, isBottomRow ? 0 : _captionLineGap);
+            CaptionRenderRules.ApplyRow(
+                row,
+                isBottomRow,
+                _captionFontSize,
+                _captionLineHeight,
+                _captionLineGap,
+                isBottomRow ? _newestTextBrush : _olderTextBrush,
+                _captionBackgroundBrush,
+                _captionTextCentered);
         }
 
         /// <summary>
@@ -900,7 +758,7 @@ namespace CsOverlay
         /// Alpha choice: the hint is the only content in the empty state, so it uses the
         /// text colour at its FULL configured alpha (the newest-line tier) to stay clearly
         /// readable over a game or a desktop. The footer is secondary chrome and uses the
-        /// quieter history tier - the text colour at <see cref="OlderTextAlphaScale"/>
+        /// quieter history tier - the text colour at <see cref="CaptionRenderRules.OlderTextAlphaScale"/>
         /// (~75%) - matching the older caption line. No new alpha values are introduced.
         /// </summary>
         private void ApplyStatusAppearance()
@@ -973,13 +831,9 @@ namespace CsOverlay
         /// </summary>
         private double ComputeCaptionPanelHeightForRows(int rows)
         {
-            double lineHeight = _captionLineHeight > 0 ? _captionLineHeight : GetStyleLineHeight(_rowStyle);
-            double rowHeight = lineHeight + GetStylePaddingVertical(_rowStyle);
+            // Same shared formula the preview uses, plus the caption-area chrome.
             double chrome = CaptionArea.Padding.Top + CaptionArea.Padding.Bottom;
-
-            // Gaps sit BETWEEN rows, so there is one fewer than the row count.
-            double gaps = Math.Max(0, rows - 1) * _captionLineGap;
-            return (rows * rowHeight) + gaps + chrome;
+            return CaptionRenderRules.PanelHeightForRows(rows, _captionLineHeight, _captionLineGap) + chrome;
         }
 
         /// <summary>
@@ -1003,74 +857,12 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Clamps the requested row count to MinCaptionRows..MaxCaptionRows, then reduces
-        /// it further (down to MinCaptionRows) if the resulting window would still be taller
-        /// than the work area. Reducing the ROW COUNT rather than merely clipping the height
-        /// keeps every displayed row whole, so no glyph is ever sliced.
+        /// The configured rolling-window row count, clamped to CaptionRenderRules.MinRows..
+        /// MaxRows and reduced if necessary so the window fits the work area. Delegates to
+        /// the shared rule so the Options preview shows the same effective count.
         /// </summary>
         private int ClampCaptionRowCount(int requested)
-        {
-            int rows = Math.Clamp(requested, MinCaptionRows, MaxCaptionRows);
-
-            double workHeight = SystemParameters.WorkArea.Height;
-            if (workHeight > 0)
-            {
-                while (rows > MinCaptionRows && ComputeCaptionPanelHeightForRows(rows) > workHeight)
-                {
-                    rows--;
-                }
-            }
-
-            return rows;
-        }
-
-        private static double GetStyleLineHeight(Style style)
-        {
-            return FindStyleSetter(style, TextBlock.LineHeightProperty) is double lineHeight
-                   && !double.IsNaN(lineHeight) && lineHeight > 0
-                ? lineHeight
-                : 0.0;
-        }
-
-        private static double GetStylePaddingVertical(Style style)
-        {
-            return FindStyleSetter(style, TextBlock.PaddingProperty) is Thickness padding
-                ? padding.Top + padding.Bottom
-                : 0.0;
-        }
-
-        private static double GetStylePaddingHorizontal(Style style)
-        {
-            return FindStyleSetter(style, TextBlock.PaddingProperty) is Thickness padding
-                ? padding.Left + padding.Right
-                : 0.0;
-        }
-
-        private static FontFamily GetStyleFontFamily(Style style)
-        {
-            return FindStyleSetter(style, TextBlock.FontFamilyProperty) as FontFamily
-                ?? new FontFamily("Segoe UI");
-        }
-
-        // Walks the style and its BasedOn chain so inherited setters (e.g. the base
-        // margin) are found too.
-        private static object? FindStyleSetter(Style? style, DependencyProperty property)
-        {
-            while (style is not null)
-            {
-                foreach (SetterBase setterBase in style.Setters)
-                {
-                    if (setterBase is Setter setter && setter.Property == property)
-                    {
-                        return setter.Value;
-                    }
-                }
-
-                style = style.BasedOn;
-            }
-
-            return null;
-        }
+            => CaptionRenderRules.ClampRowCount(requested, _captionLineHeight, _captionLineGap);
 
         // The widest the panel cap may be is the overlay canvas itself. The panel's X
         // offset is deliberately NOT subtracted: where the panel sits must never shrink

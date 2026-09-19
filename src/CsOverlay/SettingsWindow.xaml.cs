@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CsOverlay.Models;
 using CsOverlay.Services;
@@ -25,7 +29,27 @@ namespace CsOverlay
         // Border shown briefly when the hex box holds something unparseable.
         private static readonly Brush InvalidHexBrush = CreateFrozenBrush(Color.FromRgb(0xD1, 0x34, 0x38));
 
+        // Fixed, neutral sample text for the live preview. Long enough (at the default font
+        // size and panel width) to wrap into roughly six or more rows, so changing Max rows,
+        // Gap, Font size, colours and Center text all visibly change the preview.
+        private const string PreviewSampleText =
+            "The presentation walks through the updated schedule for the week ahead, confirms the "
+            + "meeting room reserved for Thursday afternoon, and reminds everyone to submit their "
+            + "travel receipts before the end of the month so the finance team can close the quarter "
+            + "on time. Please review the attached summary, note any corrections in the shared "
+            + "document before Friday, and reply to the planning thread if a different time works "
+            + "better for your team.";
+
         private readonly SettingsService _settingsService;
+
+        // Random photo backdrop for the preview (Lorem Picsum: no API key; source.unsplash.com
+        // is retired). Fetched ONCE per window, asynchronously; the solid dark backdrop in the
+        // XAML is the fallback if the request fails, times out, or there is no network.
+        private const string PreviewImageUrl = "https://picsum.photos/800/300";
+
+        private static readonly HttpClient PreviewHttpClient = CreatePreviewHttpClient();
+
+        private bool _previewImageRequested;
 
         // True from field initialisation until the constructor has finished loading and
         // seeding every control. XAML sets slider Minimum/Maximum, which coerces Value
@@ -39,6 +63,10 @@ namespace CsOverlay
             _settingsService = settingsService;
             InitializeComponent();
             LoadFromSettings();
+
+            // Kick off the photo backdrop fetch (non-blocking; falls back silently).
+            LoadPreviewImageOnceAsync();
+
             _initializing = false;
         }
 
@@ -66,6 +94,8 @@ namespace CsOverlay
 
             CenterTextCheck.IsChecked = settings.CaptionTextCentered;
             CenterPanelCheck.IsChecked = settings.PanelCenteredHorizontally;
+
+            RenderPreview();
         }
 
         private void NotifyChanged()
@@ -77,6 +107,9 @@ namespace CsOverlay
 
             _settingsService.Save();
             SettingsChanged?.Invoke();
+
+            // Any appearance change re-renders the preview with the SAME shared rules.
+            RenderPreview();
         }
 
         // ------------------------------------------------------------------
@@ -307,6 +340,138 @@ namespace CsOverlay
 
             _settingsService.Settings.PanelCenteredHorizontally = CenterPanelCheck.IsChecked == true;
             NotifyChanged();
+        }
+
+        /// <summary>
+        /// Renders the fixed sample text through the SAME shared rules the overlay uses:
+        /// <see cref="CaptionTextWrapper"/> for wrapping and <see cref="CaptionRenderRules"/>
+        /// for the wrap width, row window, bar appearance, colours and gap. Called on load
+        /// and after every setting change, so it stays live. Display-only.
+        /// </summary>
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+
+            // Re-render once the window is realised so the DPI used for measurement is final.
+            RenderPreview();
+        }
+
+        private void RenderPreview()
+        {
+            if (_settingsService is null || PreviewRows is null)
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.Settings;
+
+            double fontSize = Math.Clamp(settings.CaptionFontSize, CaptionRenderRules.MinFontSize, CaptionRenderRules.MaxFontSize);
+            double lineHeight = fontSize * CaptionRenderRules.TightLineHeightRatio;
+            double gap = Math.Max(0, settings.CaptionLineGap);
+            var typeface = new Typeface(
+                CaptionRenderRules.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+
+            // The overlay's effective max-width cap (its default when unset), clamped the
+            // same way, then the SAME effective wrap width it wraps to: cap minus the row
+            // horizontal padding minus the 1 DIP clip gutter. This makes the row breaks
+            // match the overlay exactly.
+            double cap = settings.PanelMaxWidth > 0 ? settings.PanelMaxWidth : 640.0;
+            cap = Math.Clamp(cap, 120.0, Math.Max(120.0, SystemParameters.PrimaryScreenWidth));
+            double textArea = Math.Max(1.0, cap - CaptionRenderRules.RowPaddingHorizontal - 1.0);
+
+            // Same rolling-window cap as the overlay (clamped to 1..10 and to the work area).
+            int maxRows = CaptionRenderRules.ClampRowCount(settings.CaptionMaxRows, lineHeight, gap);
+
+            double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            List<string> rows = CaptionTextWrapper.Wrap(PreviewSampleText, textArea, typeface, fontSize, pixelsPerDip);
+
+            int visible = Math.Min(rows.Count, maxRows);
+            int firstVisible = rows.Count - visible;
+
+            // Colours, exactly as the overlay builds them.
+            Color textColor = ParseColor(settings.CaptionTextColor, Colors.White);
+            byte olderAlpha = (byte)Math.Round(textColor.A * CaptionRenderRules.OlderTextAlphaScale);
+
+            Brush newestBrush = CreateFrozenBrush(textColor);
+            Brush olderBrush = CreateFrozenBrush(Color.FromArgb(olderAlpha, textColor.R, textColor.G, textColor.B));
+            Brush background = settings.CaptionBackgroundEnabled
+                ? CreateFrozenBrush(ParseColor(settings.CaptionBackgroundColor, DefaultBackgroundColor))
+                : Brushes.Transparent;
+            bool textCentered = settings.CaptionTextCentered;
+
+            PreviewRows.Children.Clear();
+
+            // Rows are oldest-first; the bottom row is the newest (brightest).
+            for (int i = 0; i < visible; i++)
+            {
+                bool isBottomRow = i == visible - 1;
+                var row = new TextBlock { Text = rows[firstVisible + i] };
+
+                CaptionRenderRules.ApplyRow(
+                    row,
+                    isBottomRow,
+                    fontSize,
+                    lineHeight,
+                    gap,
+                    isBottomRow ? newestBrush : olderBrush,
+                    background,
+                    textCentered);
+
+                PreviewRows.Children.Add(row);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Preview photo backdrop
+        // ------------------------------------------------------------------
+
+        private static HttpClient CreatePreviewHttpClient()
+        {
+            var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "CsOverlay/1.0");
+            return client;
+        }
+
+        /// <summary>
+        /// Downloads the random photo backdrop ONCE per window and applies it, off the UI
+        /// thread. Every failure (offline, timeout, DNS, non-image) is swallowed: the solid
+        /// dark backdrop remains, so the preview still works and nothing can block or throw.
+        /// </summary>
+        private async void LoadPreviewImageOnceAsync()
+        {
+            if (_previewImageRequested)
+            {
+                return;
+            }
+
+            _previewImageRequested = true;
+
+            try
+            {
+                byte[] bytes = await PreviewHttpClient.GetByteArrayAsync(PreviewImageUrl);
+
+                if (PreviewImage is null)
+                {
+                    return;
+                }
+
+                // Decode with OnLoad so the stream can be disposed immediately.
+                var bitmap = new BitmapImage();
+                using (var stream = new MemoryStream(bytes))
+                {
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = stream;
+                    bitmap.EndInit();
+                }
+
+                bitmap.Freeze();
+                PreviewImage.Source = bitmap;
+            }
+            catch
+            {
+                // Offline / slow / failed / non-image response: keep the solid dark backdrop.
+            }
         }
 
         // ------------------------------------------------------------------
