@@ -20,6 +20,7 @@ namespace CsOverlay.Services
         public event Action? ShowRequested;
         public event Action? HideRequested;
         public event Action? ToggleRequested;
+        public event Action? SettingsRequested;
         public event Action? ExitRequested;
 
         public TrayIconService()
@@ -29,6 +30,8 @@ namespace CsOverlay.Services
             _menu = new ContextMenuStrip();
             _menu.Items.Add("Show overlay", null, (_, __) => ShowRequested?.Invoke());
             _menu.Items.Add("Hide overlay", null, (_, __) => HideRequested?.Invoke());
+            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add("Show options", null, (_, __) => SettingsRequested?.Invoke());
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add("Exit", null, (_, __) => ExitRequested?.Invoke());
 

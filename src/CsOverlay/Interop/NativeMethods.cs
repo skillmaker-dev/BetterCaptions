@@ -91,6 +91,9 @@ namespace CsOverlay.Interop
         public static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll", SetLastError = true)]

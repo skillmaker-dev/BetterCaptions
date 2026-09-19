@@ -45,6 +45,50 @@ namespace CsOverlay.Models
         /// </summary>
         public bool PanelCenteredHorizontally { get; set; } = false;
 
+        /// <summary>
+        /// Caption text colour as a hex #AARRGGBB string. The newest caption line uses
+        /// this at full value; the older line uses the same hue with alpha scaled to
+        /// roughly 75% so the emphasis hierarchy survives.
+        /// </summary>
+        public string CaptionTextColor { get; set; } = "#FFFFFFFF";
+
+        /// <summary>
+        /// When false the caption bars paint no background at all (fully transparent).
+        /// </summary>
+        public bool CaptionBackgroundEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Caption bar background colour as a hex #AARRGGBB string. The alpha channel is
+        /// the bar transparency, e.g. the default #8C000000.
+        /// </summary>
+        public string CaptionBackgroundColor { get; set; } = "#8C000000";
+
+        /// <summary>
+        /// Caption glyph size in DIPs for the newest line; the older line renders at
+        /// roughly 75% of this. The line box is kept tight around the glyphs (a minimal
+        /// ratio, not the font's full proportional leading) so this controls glyph size
+        /// rather than the spacing between lines. The panel height floor scales with it.
+        /// </summary>
+        public double CaptionFontSize { get; set; } = 20;
+
+        /// <summary>
+        /// Extra vertical spacing between the two caption bars, in DIPs. This is the ONLY
+        /// thing that grows the space between the bars: it is independent of the font
+        /// size. The default 0 keeps the bars flush (the original look). It is applied as
+        /// a margin between the history bar and the newest bar and is included in the
+        /// panel height floor.
+        /// </summary>
+        public double CaptionLineGap { get; set; } = 0;
+
+        /// <summary>
+        /// When true each caption bar centres its text; when false the text is left
+        /// aligned (the default, matching the original look). Each bar auto-fits its own
+        /// text, so for a single-row caption the text exactly fills the bar and the
+        /// alignment is invisible; it shows on a wrapped caption, where the shorter
+        /// continuation row is centred instead of left aligned.
+        /// </summary>
+        public bool CaptionTextCentered { get; set; } = false;
+
         /// <summary>When true the overlay is only shown while the game window exists.</summary>
         public bool ShowOnlyWhenGameRunning { get; set; } = false;
 

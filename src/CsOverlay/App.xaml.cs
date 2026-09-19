@@ -16,6 +16,7 @@ namespace CsOverlay
         private GameWindowTracker? _tracker;
         private HotkeyService? _hotkey;
         private LiveCaptionReader? _captions;
+        private SettingsWindow? _settingsWindow;
 
         public SettingsService SettingsService =>
             _settingsService ?? throw new InvalidOperationException("Settings service is not initialized.");
@@ -38,6 +39,7 @@ namespace CsOverlay
             _tray.ShowRequested += () => _mainWindow?.ShowOverlay();
             _tray.HideRequested += () => _mainWindow?.HideOverlay();
             _tray.ToggleRequested += () => _mainWindow?.ToggleOverlay();
+            _tray.SettingsRequested += OnSettingsRequested;
             _tray.ExitRequested += () => Shutdown();
 
             // The global hotkey toggles the overlay panel.
@@ -85,6 +87,71 @@ namespace CsOverlay
             _tray?.Dispose();
             _settingsService?.Save();
             base.OnExit(e);
+        }
+
+        /// <summary>
+        /// Opens the settings window, or re-activates the existing one so the tray can
+        /// never stack duplicates. The window is a normal, activatable window; it does
+        /// not own the overlay, so it never becomes topmost.
+        /// </summary>
+        private void OnSettingsRequested()
+        {
+            if (_settingsService is null)
+            {
+                return;
+            }
+
+            if (_settingsWindow is null)
+            {
+                var settingsWindow = new SettingsWindow(_settingsService);
+                settingsWindow.SettingsChanged += OnSettingsChanged;
+
+                // Drop the reference when it closes so a later open creates a fresh one;
+                // closing it must NOT exit the app (ShutdownMode is OnExplicitShutdown).
+                settingsWindow.Closed += (_, __) =>
+                {
+                    if (ReferenceEquals(_settingsWindow, settingsWindow))
+                    {
+                        _settingsWindow = null;
+                    }
+                };
+
+                _settingsWindow = settingsWindow;
+
+                // Shown as a normal FOREGROUND desktop window. It is never topmost, so it
+                // can never float over the game - it belongs on the desktop.
+                settingsWindow.Show();
+                settingsWindow.Activate();
+            }
+            else
+            {
+                if (_settingsWindow.WindowState == WindowState.Minimized)
+                {
+                    _settingsWindow.WindowState = WindowState.Normal;
+                }
+
+                _settingsWindow.Activate();
+            }
+        }
+
+        /// <summary>
+        /// Applies a settings-window change to the running overlay immediately. The
+        /// window has already persisted the change.
+        /// </summary>
+        private void OnSettingsChanged()
+        {
+            if (_settingsService is null || _mainWindow is null)
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.Settings;
+
+            // Caption appearance, panel width/height floor and placement.
+            _mainWindow.ApplyAppearanceSettings();
+
+            // Re-apply click-through gating with the new preference.
+            _mainWindow.SetClickThrough(settings.ClickThroughWhenIdle && !_mainWindow.IsOverlayVisible);
         }
 
         /// <summary>
@@ -207,6 +274,14 @@ namespace CsOverlay
 
             _mainWindow.SetGameStatus(running);
 
+            if (!running)
+            {
+                // The game window is gone OR unusable (minimized / alt-tabbed): return the
+                // overlay to the desktop instead of leaving it snapped to the minimized
+                // placeholder rect (-25600,-25600 at 128x22), which hid the panel.
+                _mainWindow.RestoreToDesktopBounds();
+            }
+
             if (settings.ShowOnlyWhenGameRunning)
             {
                 if (running)
@@ -221,18 +296,18 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Runs on every tracker tick. While the game is running, re-assert the topmost
-        /// z-order on the overlay so the game's own topmost fullscreen window cannot sit
-        /// above it. Skipped entirely when the game is not running to avoid churning
-        /// z-order on the desktop.
+        /// Runs on every tracker tick. Re-asserts the topmost z-order on the overlay
+        /// whenever it is visible, so the game's own topmost fullscreen window cannot
+        /// sit above it.
         /// </summary>
+        /// <remarks>
+        /// Deliberately NOT gated on the game running. The Windows taskbar is itself a
+        /// topmost window and the overlay is often parked near the bottom of the screen,
+        /// so on the desktop the taskbar would cover it. Skipping this while no game was
+        /// running is exactly why the panel used to appear only in-game.
+        /// </remarks>
         private void OnTrackerPolled(bool running)
         {
-            if (!running)
-            {
-                return;
-            }
-
             if (_mainWindow?.IsOverlayVisible == true)
             {
                 _mainWindow.EnforceTopmost();
