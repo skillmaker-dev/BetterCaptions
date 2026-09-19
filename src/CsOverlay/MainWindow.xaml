@@ -48,8 +48,8 @@
             <Setter Property="Foreground" Value="#FFFFFFFF" />
         </Style>
 
-        <!-- The same fitted-bar treatment for the no-caption hint and the footer, so
-             that with the transparent container no text floats unbacked over the game. -->
+        <!-- The fitted-bar treatment for the no-caption hint, so that with the
+             transparent container no text floats unbacked over the game. -->
         <Style x:Key="StatusBar" TargetType="TextBlock">
             <Setter Property="Background" Value="#8C000000" />
             <Setter Property="Padding" Value="10,3" />
@@ -75,15 +75,9 @@
             MouseEnter="OverlayPanel_MouseEnter"
             MouseLeave="OverlayPanel_MouseLeave">
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
             <!-- No padding: each line carries its own, so the group width is exactly
                  the widest bar and no bar edge is clipped. -->
             <Border x:Name="CaptionArea"
-                    Grid.Row="0"
                     Padding="0">
                 <Grid ClipToBounds="True">
                     <!-- Up to the configured max row count (_maxDisplayedRows) of
@@ -106,24 +100,11 @@
                 </Grid>
             </Border>
 
-            <!-- Only shown while there are no captions, so the panel is pure caption
-                 content in use. -->
-            <TextBlock x:Name="StatusText"
-                       Grid.Row="1"
-                       Style="{StaticResource StatusBar}"
-                       Text="waiting for game..."
-                       Foreground="#66FFFFFF"
-                       FontFamily="Segoe UI"
-                       FontSize="11"
-                       Margin="0,0,0,6"
-                       TextTrimming="CharacterEllipsis" />
-
             <!-- The width grip. Hidden until the panel is hovered (faded in/out from
                  code-behind) and non-hit-testable while hidden. It adjusts the max-width
                  cap only: the height is the fixed 3-row window, so vertical resizing is
                  meaningless. A plain transparent hit area with a small mark. -->
             <Grid x:Name="ResizeGrips"
-                  Grid.RowSpan="2"
                   Opacity="0"
                   IsHitTestVisible="False">
 

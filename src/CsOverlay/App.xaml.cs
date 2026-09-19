@@ -309,7 +309,6 @@ namespace CsOverlay
             }
 
             // Nothing registered: keep running, tray icon is the fallback control.
-            _mainWindow?.SetHotkeyDisplay(string.Empty);
             _tray?.SetTooltip("CsOverlay \u2014 no hotkey");
             _tray?.ShowNotification(
                 "CsOverlay",
@@ -347,7 +346,6 @@ namespace CsOverlay
         private void ApplyHotkeyDisplay(HotkeyCandidate candidate)
         {
             string text = HotkeyFormatter.Format(candidate.Ctrl, candidate.Shift, candidate.Alt, candidate.Key);
-            _mainWindow?.SetHotkeyDisplay(text);
             _tray?.SetTooltip("CsOverlay \u2014 " + text);
         }
 
@@ -361,8 +359,6 @@ namespace CsOverlay
             }
 
             AppSettings settings = _settingsService.Settings;
-
-            _mainWindow.SetGameStatus(running);
 
             if (!running)
             {

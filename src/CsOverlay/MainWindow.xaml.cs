@@ -38,8 +38,6 @@ namespace CsOverlay
 
         private bool _clickThrough;
         private bool _overlayVisible;
-        private bool _gameRunning;
-        private string _hotkeyDisplay = string.Empty;
 
         // Caption history state. The newest line is tracked so the arrival
         // animation fires only when a genuinely new line appears, not on every
@@ -119,8 +117,6 @@ namespace CsOverlay
             // Apply the persisted appearance at startup. Size, placement and the centre
             // checkbox are applied in OnSourceInitialized once the canvas size is known.
             ApplyAppearanceSettings();
-
-            SetGameStatus(false);
         }
 
         public bool IsOverlayVisible => _overlayVisible;
@@ -310,22 +306,6 @@ namespace CsOverlay
             {
                 ShowOverlay();
             }
-        }
-
-        public void SetGameStatus(bool running)
-        {
-            _gameRunning = running;
-            UpdateStatusText();
-        }
-
-        /// <summary>
-        /// Supplies the readable active hotkey (e.g. "Ctrl+Alt+O") for display in the
-        /// overlay. Pass an empty string when no hotkey is bound.
-        /// </summary>
-        public void SetHotkeyDisplay(string hotkeyText)
-        {
-            _hotkeyDisplay = hotkeyText ?? string.Empty;
-            UpdateStatusText();
         }
 
         /// <summary>
@@ -524,33 +504,10 @@ namespace CsOverlay
                 return;
             }
 
-            // When captions are on screen both status lines get out of the way
-            // entirely, leaving the panel as pure caption content.
+            // When captions are on screen the hint gets out of the way entirely, leaving
+            // the panel as pure caption content.
             Visibility statusVisibility = _hasCaptions ? Visibility.Collapsed : Visibility.Visible;
             CaptionStatusText.Visibility = statusVisibility;
-
-            if (StatusText is not null)
-            {
-                StatusText.Visibility = statusVisibility;
-            }
-        }
-
-        private void UpdateStatusText()
-        {
-            if (StatusText is null)
-            {
-                return;
-            }
-
-            string status = _gameRunning
-                ? "game: Counter-Strike: Source detected"
-                : "waiting for game...";
-
-            string suffix = string.IsNullOrEmpty(_hotkeyDisplay)
-                ? " (no hotkey)"
-                : $" ({_hotkeyDisplay})";
-
-            StatusText.Text = status + suffix;
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -749,34 +706,23 @@ namespace CsOverlay
         }
 
         /// <summary>
-        /// Tints the no-caption hint (<see cref="CaptionStatusText"/>) and the footer
-        /// (<see cref="StatusText"/>) with the SAME settings as the caption bars:
-        /// the configured text colour for the foreground and the configured caption
-        /// background for the backer - or nothing at all when backgrounds are disabled
-        /// (which still stays hit-testable so the panel remains draggable across it).
-        ///
-        /// Alpha choice: the hint is the only content in the empty state, so it uses the
-        /// text colour at its FULL configured alpha (the newest-line tier) to stay clearly
-        /// readable over a game or a desktop. The footer is secondary chrome and uses the
-        /// quieter history tier - the text colour at <see cref="CaptionRenderRules.OlderTextAlphaScale"/>
-        /// (~75%) - matching the older caption line. No new alpha values are introduced.
+        /// Tints the no-caption hint (<see cref="CaptionStatusText"/>) with the SAME settings
+        /// as the caption bars: the configured text colour for the foreground and the
+        /// configured caption background for the backer - or nothing at all when backgrounds
+        /// are disabled (which still stays hit-testable so the panel remains draggable across
+        /// it). The hint is the only content in the empty state, so it uses the text colour at
+        /// its FULL configured alpha to stay clearly readable over a game or a desktop.
         /// </summary>
         private void ApplyStatusAppearance()
         {
-            // The caption text-alignment setting is deliberately NOT applied here: the hint
-            // and footer are single-line and already centred as elements, so TextAlignment
-            // would have no visible effect (it would only matter if the hint wrapped). They
-            // keep the default left text alignment.
+            // The caption text-alignment setting is deliberately NOT applied here: the hint is
+            // single-line and already centred as an element, so TextAlignment would have no
+            // visible effect (it would only matter if the hint wrapped). It keeps the default
+            // left text alignment.
             if (CaptionStatusText is not null)
             {
                 CaptionStatusText.Foreground = _newestTextBrush;
                 CaptionStatusText.Background = _captionBackgroundBrush;
-            }
-
-            if (StatusText is not null)
-            {
-                StatusText.Foreground = _olderTextBrush;
-                StatusText.Background = _captionBackgroundBrush;
             }
         }
 
