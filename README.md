@@ -141,6 +141,12 @@ Settings live in `%LOCALAPPDATA%\BetterCaptions\settings.json`. Most are editabl
 - The optional game-window auto-snap only recognises the Counter-Strike: Source and Source engine window process names (`cstrike_win64`, `cstrike`, `hl2`). The overlay itself is not restricted to those games; you can show it over anything.
 - The app starts hidden. If the overlay does not appear, check the tray icon and the bound hotkey in the tray tooltip.
 
+## Supporting this project
+
+BetterCaptions is free and MIT licensed. If it has been useful to you and you would like to say thanks, you can support me on Ko-fi: **https://ko-fi.com/skillmaker**
+
+It is not expected. Bug reports, testing, and pointing someone who needs it at this project help just as much.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
