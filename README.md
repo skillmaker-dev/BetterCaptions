@@ -6,6 +6,14 @@ A Windows overlay that mirrors Windows Live Captions over a fullscreen game, wit
 
 BetterCaptions is a small tray utility for people who are hard of hearing. It reads the text that Windows Live Captions is already producing and draws it on a caption panel that sits on top of a fullscreen game. It can also light a soft glow at the screen edge a sound came from. It was built for Counter-Strike: Source, but the overlay itself is not tied to that game: it is a topmost window that can be shown over anything. The only game-specific part is the optional auto-snap described below.
 
+## Supporting this project
+
+[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/skillmaker)
+
+BetterCaptions is free and MIT licensed. If it has been useful to you and you would like to say thanks, you can support me on Ko-fi: **https://ko-fi.com/skillmaker**
+
+It is not expected. Bug reports, testing, and pointing someone who needs it at this project help just as much.
+
 ## Features
 
 - Mirrors Windows Live Captions text onto an always-on-top caption panel over a fullscreen game.
@@ -140,12 +148,6 @@ Settings live in `%LOCALAPPDATA%\BetterCaptions\settings.json`. Most are editabl
 - The directional indicators rely on capturing the default output device with WASAPI loopback in shared mode. If the device is held in exclusive mode by another application, capture is not possible; the Options status line says so. Muted or silent output is also reported as a status hint. The indicator direction comes from the output channel layout, so stereo output cannot resolve front, back or the corners.
 - The optional game-window auto-snap only recognises the Counter-Strike: Source and Source engine window process names (`cstrike_win64`, `cstrike`, `hl2`). The overlay itself is not restricted to those games; you can show it over anything.
 - The app starts hidden. If the overlay does not appear, check the tray icon and the bound hotkey in the tray tooltip.
-
-## Supporting this project
-
-BetterCaptions is free and MIT licensed. If it has been useful to you and you would like to say thanks, you can support me on Ko-fi: **https://ko-fi.com/skillmaker**
-
-It is not expected. Bug reports, testing, and pointing someone who needs it at this project help just as much.
 
 ## License
 
