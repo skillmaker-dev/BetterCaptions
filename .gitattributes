@@ -1,0 +1,12 @@
+# Store LF in the repository, check out the platform-native ending.
+# Without this, git warns about LF/CRLF on almost every changed file.
+* text=auto
+
+# Never touch binary files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.dll binary

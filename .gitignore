@@ -28,6 +28,14 @@ TestResults/
 [Cc]overage/
 *.trx
 
+# Local publish / packaging output
+artifacts/
+
+# Logs and scratch files
+*.log
+*.tmp
+*.bak
+
 # OS noise
 Thumbs.db
 desktop.ini
