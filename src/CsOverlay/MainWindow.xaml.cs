@@ -6,6 +6,8 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 using CsOverlay.Interop;
 using CsOverlay.Models;
 using CsOverlay.Services;
@@ -36,7 +38,9 @@ namespace CsOverlay
         private HwndSource? _hwndSource;
         private IntPtr _handle = IntPtr.Zero;
 
-        private bool _clickThrough;
+        private bool _clickThrough;                 // WS_EX_TRANSPARENT style currently applied
+        private bool _clickThroughWanted;           // what the app's click-through gating asked for
+        private bool _indicatorClickThrough;        // forced on while indicators show and the pointer is away
         private bool _overlayVisible;
 
         // Caption history state. The newest line is tracked so the arrival
@@ -106,23 +110,156 @@ namespace CsOverlay
         // the panel's margin (which is the coupling that used to reset the width).
         private bool? _appliedPanelCentered;
 
+        // ---- Directional audio indicators -----------------------------------------
+        // Peripheral cue only: a soft gradient glow at each screen edge/corner, driven by
+        // the smoothed per-direction levels. The peak opacity is deliberately low so it
+        // never obscures gameplay.
+
+        private const double MaxIndicatorOpacity = 0.8;
+
+        // ---- Loudness colour ramp --------------------------------------------------
+        // The indicator COLOUR is driven by the same 0..1 level as its opacity, so colour
+        // consistently means loudness across every direction:
+        //     quiet -> blue     mid -> yellow     higher -> orange     loudest -> red
+        // The ramp is interpolated in HSV along the hue arc (blue -> cyan -> green ->
+        // yellow -> orange -> red), NOT by a straight RGB blend between blue and red: an
+        // RGB blend of two distant hues dips through a desaturated grey/purple, whereas
+        // walking the hue path keeps saturation and value high throughout, so every step
+        // stays vivid. The first anchor is a deliberately muted dark blue, so a very quiet
+        // sound reads as a dim (not fully saturated) colour; the ramp reaches full
+        // saturation once the level is clearly audible, and full-brightness red at the top.
+        private const int LoudnessRampSteps = 64;
+
+        // How loud the audio must be before the colour ramp reaches its warm end. The level
+        // fed to the ramp ONLY (never to the opacity) is DIVIDED by this scale, so above 1.0
+        // the warm colours (yellow/orange/red) appear only at louder audio; below 1.0 they
+        // appear sooner. The bounds stop a hand-edited settings file from producing a silly
+        // value (and prevent a divide-by-zero / blow-up). Default 1.0.
+        private const double MinAudioLoudnessScale = 0.25;
+        private const double MaxAudioLoudnessScale = 4.0;
+
+        // (level, hue degrees, saturation 0..1, value 0..1). Hue decreases monotonically
+        // along the arc, so the per-segment lerp never wraps.
+        private static readonly (double Level, double Hue, double Saturation, double Value)[] LoudnessRamp =
+        {
+            (0.00, 215.0, 0.40, 0.35), // muted dark blue - the quiet floor
+            (0.10, 208.0, 0.80, 1.00), // vivid blue (the existing accent)
+            (0.45,  52.0, 1.00, 1.00), // yellow
+            (0.72,  28.0, 1.00, 1.00), // orange
+            (1.00,   3.0, 1.00, 1.00)  // red
+        };
+
+        // Precomputed once: one RGB colour per quantised level step. Picking a colour on the
+        // ~60 Hz path is then a single array index - no allocation and no colour maths.
+        private static readonly Color[] LoudnessRampColors = BuildLoudnessRampColors();
+
+        // One entry per indicator: the stops of its own unfrozen brush plus the last
+        // quantised ramp step applied, so a steady level never re-writes the stops.
+        private sealed class IndicatorRampState
+        {
+            public IndicatorRampState(GradientStopCollection stops)
+            {
+                Stops = stops;
+            }
+
+            public GradientStopCollection Stops { get; }
+
+            public int LastRampStep { get; set; } = -1;
+        }
+
+        private readonly Dictionary<Rectangle, IndicatorRampState> _indicatorRampStates =
+            new Dictionary<Rectangle, IndicatorRampState>();
+
+        // The single audio pipeline. It is OWNED by App and BOUND to this window through
+        // AttachAudio; the overlay never constructs or disposes it - it only subscribes to
+        // drive the indicators and to publish the read-only status surface.
+        private AudioCaptureService? _audioCapture;
+        private DirectionalAudioAnalyzer? _audioAnalyzer;
+
+        // The latest snapshot is written by the analyzer's 60 Hz thread-pool event and read
+        // by the UI timer. The lock is held only to copy a struct, so the ~60 Hz update path
+        // allocates nothing.
+        private readonly object _audioLevelsGate = new object();
+        private DirectionalAudioLevels _audioLevels;
+
+        private DispatcherTimer? _audioIndicatorTimer;
+        private Rectangle[] _allIndicators = Array.Empty<Rectangle>();
+        private Rectangle[] _frontBackIndicators = Array.Empty<Rectangle>();
+
+        // Stereo output (2 ch) cannot resolve front/back: those indicators are hidden, and
+        // the Options status line says so. Optimistic until the capture format is known.
+        private bool _audioFrontBackAvailable = true;
+
+        // Read-only status surface for the Options window (via Application.Current.MainWindow).
+        private AudioCaptureStatus _audioCaptureState = AudioCaptureStatus.NoDevice;
+        private string _audioCaptureMessage = string.Empty;
+
         public MainWindow(SettingsService settingsService)
         {
             _settingsService = settingsService;
             InitializeComponent();
+
+            // Map each indicator element to its direction. Left/Right stay on every output;
+            // the front/back group is hidden on stereo.
+            _allIndicators = new[]
+            {
+                IndicatorLeft, IndicatorRight,
+                IndicatorFront, IndicatorBack,
+                IndicatorFrontLeft, IndicatorFrontRight,
+                IndicatorBackLeft, IndicatorBackRight
+            };
+            _frontBackIndicators = new[]
+            {
+                IndicatorFront, IndicatorBack,
+                IndicatorFrontLeft, IndicatorFrontRight,
+                IndicatorBackLeft, IndicatorBackRight
+            };
+
+            // Give each indicator its own modifiable brush copy so the loudness ramp can
+            // recolour its stops in place (once, here - never per frame).
+            InitializeIndicatorRamps();
+
+            // Pull the latest audio snapshot on the UI thread at ~60 Hz. A DispatcherTimer
+            // (not a per-event BeginInvoke) keeps the update path allocation-free.
+            _audioIndicatorTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _audioIndicatorTimer.Tick += OnAudioIndicatorTick;
 
             // No window-level Opacity is applied; only the panel brush is slightly
             // translucent, so the text stays fully opaque.
 
             // Apply the persisted appearance at startup. Size, placement and the centre
             // checkbox are applied in OnSourceInitialized once the canvas size is known.
+            // The audio indicators are attached later, by App, once it creates the pipeline.
             ApplyAppearanceSettings();
         }
 
         public bool IsOverlayVisible => _overlayVisible;
 
+        // ---- Read-only audio status for the Options window ------------------------
+        // SettingsWindow reaches this instance through Application.Current.MainWindow and
+        // only reads these (and subscribes to the event); it never mutates the pipeline.
+        public event Action? AudioStatusChanged;
+
+        /// <summary>True while the directional-audio pipeline is running.</summary>
+        public bool AudioIndicatorsActive => _audioCapture is not null;
+
+        /// <summary>The capture state, safe to read from the UI thread.</summary>
+        public AudioCaptureStatus AudioCaptureState => _audioCaptureState;
+
+        /// <summary>The capture's human-readable status / hint.</summary>
+        public string AudioCaptureMessage => _audioCaptureMessage;
+
         /// <summary>
-        /// Raised when the global hotkey is pressed. App decides what the hotkey
+        /// False on stereo output: front/back (and the four corners) cannot be resolved, so
+        /// those indicators are hidden and only left/right are shown.
+        /// </summary>
+        public bool AudioFrontBackAvailable => _audioFrontBackAvailable;
+
+        /// <summary>
+        /// Raised when the hotkey is pressed. App decides what the hotkey
         /// toggles (overlay panel + PiP video together); the tray keeps using the
         /// individual Show/Hide methods for panel-only control.
         /// </summary>
@@ -163,16 +300,35 @@ namespace CsOverlay
 
         protected override void OnClosed(EventArgs e)
         {
+            DetachAudio();
             _hwndSource?.RemoveHook(WndProc);
             base.OnClosed(e);
         }
 
         /// <summary>
-        /// Toggles WS_EX_TRANSPARENT so mouse input either passes through to the game
-        /// or is handled by this window.
+        /// Records the click-through state the rest of the app wants (the ClickThroughWhenIdle
+        /// gating). The style actually applied also honours the forced indicator click-through;
+        /// see <see cref="ApplyClickThrough"/>.
         /// </summary>
         public void SetClickThrough(bool enabled)
         {
+            _clickThroughWanted = enabled;
+            ApplyClickThrough();
+        }
+
+        /// <summary>
+        /// Applies WS_EX_TRANSPARENT when either the app wants click-through OR the audio
+        /// indicators are showing and the pointer is away from the caption panel.
+        ///
+        /// This is the real fix for the indicator layer swallowing clicks: the overlay is an
+        /// AllowsTransparency (layered) window, and layered windows hit-test PER PIXEL, so any
+        /// non-transparent pixel captures the click regardless of IsHitTestVisible. Only
+        /// WS_EX_TRANSPARENT makes the OS ignore the window for hit testing.
+        /// </summary>
+        private void ApplyClickThrough()
+        {
+            bool enabled = _clickThroughWanted || _indicatorClickThrough;
+
             if (_handle == IntPtr.Zero || _clickThrough == enabled)
             {
                 return;
@@ -683,6 +839,11 @@ namespace CsOverlay
             {
                 ApplyPanelPlacement();
             }
+
+            // Bring the audio indicator layer in line with the setting. App owns the audio
+            // pipeline and calls AttachAudio/DetachAudio; this only guarantees the layer is
+            // inert when the feature is off.
+            ApplyAudioSettings();
         }
 
         /// <summary>
@@ -723,6 +884,454 @@ namespace CsOverlay
             {
                 CaptionStatusText.Foreground = _newestTextBrush;
                 CaptionStatusText.Background = _captionBackgroundBrush;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Directional audio indicators
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Keeps the indicator layer in step with the feature setting. App owns the audio
+        /// pipeline and drives AttachAudio/DetachAudio; here we only ensure that when the
+        /// feature is off nothing lingers.
+        /// </summary>
+        private void ApplyAudioSettings()
+        {
+            if (!_settingsService.Settings.AudioIndicatorsEnabled)
+            {
+                DetachAudio();
+            }
+        }
+
+        /// <summary>
+        /// Binds the app-owned directional-audio pipeline to this window. The overlay never
+        /// constructs or disposes the analyzer/capture - it subscribes to them to render the
+        /// indicators and to publish the read-only status the Options window reads.
+        /// </summary>
+        public void AttachAudio(DirectionalAudioAnalyzer analyzer, AudioCaptureService capture)
+        {
+            if (analyzer is null || capture is null)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(_audioAnalyzer, analyzer) && ReferenceEquals(_audioCapture, capture))
+            {
+                return; // already bound to this exact pipeline
+            }
+
+            DetachAudio();
+
+            _audioAnalyzer = analyzer;
+            _audioCapture = capture;
+            _audioAnalyzer.LevelsUpdated += OnAudioLevelsUpdated;
+            _audioCapture.StatusChanged += OnAudioCaptureStatusChanged;
+
+            // Seed the status surface immediately; the capture raises changes from here on.
+            _audioCaptureState = capture.Status;
+            _audioCaptureMessage = capture.StatusMessage;
+            _audioFrontBackAvailable = true;
+            UpdateAudioFrontBackAvailability();
+
+            if (AudioIndicatorLayer is not null)
+            {
+                AudioIndicatorLayer.Visibility = Visibility.Visible;
+            }
+
+            _audioIndicatorTimer?.Start();
+
+            // Immediately make the window click-through over the freshly shown layer unless
+            // the pointer is already over the panel.
+            UpdateIndicatorClickThrough();
+
+            AudioStatusChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Unsubscribes from the bound pipeline and makes the indicator layer fully inert.
+        /// Symmetric with <see cref="AttachAudio"/> and safe to call when nothing is bound.
+        /// It never disposes the pipeline - App owns it.
+        /// </summary>
+        public void DetachAudio()
+        {
+            if (_audioAnalyzer is not null)
+            {
+                _audioAnalyzer.LevelsUpdated -= OnAudioLevelsUpdated;
+                _audioAnalyzer = null;
+            }
+
+            if (_audioCapture is not null)
+            {
+                _audioCapture.StatusChanged -= OnAudioCaptureStatusChanged;
+                _audioCapture = null;
+            }
+
+            _audioIndicatorTimer?.Stop();
+
+            lock (_audioLevelsGate)
+            {
+                _audioLevels = default;
+            }
+
+            for (int i = 0; i < _allIndicators.Length; i++)
+            {
+                _allIndicators[i].Opacity = 0.0;
+            }
+
+            // Restore the front/back group so a later multichannel attach shows it again.
+            for (int i = 0; i < _frontBackIndicators.Length; i++)
+            {
+                _frontBackIndicators[i].Visibility = Visibility.Visible;
+            }
+
+            _audioFrontBackAvailable = true;
+
+            if (AudioIndicatorLayer is not null)
+            {
+                AudioIndicatorLayer.Visibility = Visibility.Collapsed;
+            }
+
+            // Drop the forced indicator click-through and return to the app's gating.
+            if (_indicatorClickThrough)
+            {
+                _indicatorClickThrough = false;
+                ApplyClickThrough();
+            }
+
+            if (_audioCaptureState != AudioCaptureStatus.NoDevice || _audioCaptureMessage.Length > 0)
+            {
+                _audioCaptureState = AudioCaptureStatus.NoDevice;
+                _audioCaptureMessage = string.Empty;
+                AudioStatusChanged?.Invoke();
+            }
+        }
+
+        // Written on the analyzer's thread-pool thread at ~60 Hz; read by the UI timer. Only
+        // a struct copy happens under the lock, so this path allocates nothing.
+        private void OnAudioLevelsUpdated(DirectionalAudioLevels levels)
+        {
+            lock (_audioLevelsGate)
+            {
+                _audioLevels = levels;
+            }
+        }
+
+        // Applied on the UI thread. Copies the latest snapshot and applies each direction's
+        // level to its indicator - Opacity AND its ramp colour - directly: no per-update
+        // delegate, dispatcher call, animation object or brush allocation.
+        private void OnAudioIndicatorTick(object? sender, EventArgs e)
+        {
+            // Keep the layered window click-through everywhere except over the caption
+            // panel, so the lit indicator bands never swallow game input.
+            UpdateIndicatorClickThrough();
+
+            DirectionalAudioLevels levels;
+            lock (_audioLevelsGate)
+            {
+                levels = _audioLevels;
+            }
+
+            // Read the loudness scale once per tick, so a slider change is picked up on the
+            // next frame with no restart and no extra work per indicator. It only moves the
+            // ramp (colour); the opacity mapping below stays untouched.
+            double loudnessScale = ClampLoudnessScale(_settingsService.Settings.AudioLoudnessScale);
+
+            if (_audioFrontBackAvailable)
+            {
+                // Multichannel: each direction is already isolated by speaker channel, so
+                // the per-direction levels are used directly.
+                SetIndicatorIntensity(IndicatorLeft, levels.Left, loudnessScale);
+                SetIndicatorIntensity(IndicatorRight, levels.Right, loudnessScale);
+                SetIndicatorIntensity(IndicatorFront, levels.Front, loudnessScale);
+                SetIndicatorIntensity(IndicatorBack, levels.Back, loudnessScale);
+                SetIndicatorIntensity(IndicatorFrontLeft, levels.FrontLeft, loudnessScale);
+                SetIndicatorIntensity(IndicatorFrontRight, levels.FrontRight, loudnessScale);
+                SetIndicatorIntensity(IndicatorBackLeft, levels.BackLeft, loudnessScale);
+                SetIndicatorIntensity(IndicatorBackRight, levels.BackRight, loudnessScale);
+            }
+            else
+            {
+                // Stereo: a stereo mix is not a hard switch, but driving each side from its
+                // own absolute level makes both light for a one-sided sound. Drive the two
+                // sides by BALANCE instead, so the dominant side wins.
+                ComputeStereoBalance(levels.Left, levels.Right, out float leftIntensity, out float rightIntensity);
+                SetIndicatorIntensity(IndicatorLeft, leftIntensity, loudnessScale);
+                SetIndicatorIntensity(IndicatorRight, rightIntensity, loudnessScale);
+            }
+        }
+
+        /// <summary>
+        /// Maps the two smoothed channel levels onto the left/right indicators by BALANCE,
+        /// so the side that actually dominates wins:
+        ///   total = max(L, R);  pan = (R - L) / (L + R);  left = total * (1 - pan) / 2;
+        ///   right = total * (1 + pan) / 2.
+        /// A hard-left sound gives left = total and right = 0; a centred sound gives both =
+        /// total / 2 (so a sound dead ahead still registers, equally on both sides). The
+        /// inputs are the analyzer's already-smoothed / peak-held levels, so nothing jitters.
+        /// </summary>
+        private static void ComputeStereoBalance(float left, float right, out float leftIntensity, out float rightIntensity)
+        {
+            float total = Math.Max(left, right);
+            if (total <= 0f)
+            {
+                leftIntensity = 0f;
+                rightIntensity = 0f;
+                return;
+            }
+
+            float pan = (right - left) / (left + right + 0.0001f); // -1 hard left, +1 hard right
+            leftIntensity = total * Math.Clamp((1f - pan) * 0.5f, 0f, 1f);
+            rightIntensity = total * Math.Clamp((1f + pan) * 0.5f, 0f, 1f);
+        }
+
+        /// <summary>
+        /// While the indicator layer is showing, keeps the whole window click-through
+        /// (WS_EX_TRANSPARENT) except when the pointer is over the caption panel - so the
+        /// panel stays draggable and the indicator bands never capture input. Never forces
+        /// it during a drag/resize, and does nothing when the layer is off, so the normal
+        /// click-through gating is unaffected the rest of the time.
+        /// </summary>
+        private void UpdateIndicatorClickThrough()
+        {
+            bool layerShowing = AudioIndicatorLayer is not null
+                && AudioIndicatorLayer.Visibility == Visibility.Visible
+                && IsVisible;
+
+            bool force = layerShowing
+                && !_dragging
+                && _resizeMode == ResizeEdge.None
+                && !IsCursorOverPanel();
+
+            if (force == _indicatorClickThrough)
+            {
+                return;
+            }
+
+            _indicatorClickThrough = force;
+            ApplyClickThrough();
+        }
+
+        // Screen-space cursor test against the caption panel's bounds. It is a pure
+        // transform (not input), so it still works while the window is click-through - which
+        // is what lets the panel become interactive again the moment the pointer reaches it.
+        private bool IsCursorOverPanel()
+        {
+            if (OverlayPanel is null)
+            {
+                return false;
+            }
+
+            System.Drawing.Point mouse = System.Windows.Forms.Control.MousePosition;
+            Point local = OverlayPanel.PointFromScreen(new Point(mouse.X, mouse.Y));
+
+            return local.X >= 0 && local.Y >= 0
+                && local.X < OverlayPanel.ActualWidth
+                && local.Y < OverlayPanel.ActualHeight;
+        }
+
+        /// <summary>
+        /// Gives every indicator its own unfrozen copy of its gradient brush and remembers
+        /// that copy's stop collection, so the per-frame colour ramp can rewrite the stop
+        /// colours in place. Cloning the XAML brush keeps the exact fade geometry and the
+        /// per-stop alphas; cloning also guarantees the brush is modifiable even if the
+        /// resource dictionary froze the original. Runs once, at construction.
+        /// </summary>
+        private void InitializeIndicatorRamps()
+        {
+            for (int i = 0; i < _allIndicators.Length; i++)
+            {
+                Rectangle element = _allIndicators[i];
+                GradientBrush template = element.Fill as GradientBrush
+                    ?? throw new InvalidOperationException("Audio indicator must use a gradient brush.");
+
+                // Clone() returns a modifiable copy: the fade geometry and the per-stop
+                // alphas carry over untouched; only the RGB will change with the level.
+                var brush = (GradientBrush)template.Clone();
+                element.Fill = brush;
+                _indicatorRampStates[element] = new IndicatorRampState(brush.GradientStops);
+            }
+        }
+
+        /// <summary>
+        /// Clamps the persisted loudness scale to the supported range. A non-finite value
+        /// (only reachable from a hand-edited settings file) falls back to unity.
+        /// </summary>
+        private static double ClampLoudnessScale(double scale)
+        {
+            if (double.IsNaN(scale))
+            {
+                return 1.0;
+            }
+
+            return Math.Clamp(scale, MinAudioLoudnessScale, MaxAudioLoudnessScale);
+        }
+
+        /// <summary>
+        /// Applies one direction's 0..1 level to its indicator. The element Opacity gets the
+        /// level scaled to <see cref="MaxIndicatorOpacity"/> - unaffected by the loudness
+        /// scale - while the gradient stops get the ramp colour for
+        /// <c>clamp(level / loudnessScale, 0, 1)</c>, so a larger scale reserves the warm
+        /// colours for louder audio without changing brightness. Only the stop RGB is
+        /// rewritten: the offsets and the alphas (opaque at the screen edge/corner, fully
+        /// transparent inward) are left alone, so the soft peripheral fade is preserved
+        /// exactly. The colour is quantised, so a steady level does no work at all.
+        /// </summary>
+        private void SetIndicatorIntensity(Rectangle indicator, float level, double loudnessScale)
+        {
+            float clamped = Math.Clamp(level, 0f, 1f);
+
+            if (_indicatorRampStates.TryGetValue(indicator, out IndicatorRampState? state) && state is not null)
+            {
+                float rampLevel = (float)Math.Clamp(clamped / loudnessScale, 0.0, 1.0);
+                int step = (int)((rampLevel * (LoudnessRampSteps - 1)) + 0.5f);
+                if (step != state.LastRampStep)
+                {
+                    state.LastRampStep = step;
+                    Color ramp = LoudnessRampColors[step];
+                    GradientStopCollection stops = state.Stops;
+                    for (int i = 0; i < stops.Count; i++)
+                    {
+                        GradientStop stop = stops[i];
+                        byte alpha = stop.Color.A;
+                        stop.Color = Color.FromArgb(alpha, ramp.R, ramp.G, ramp.B);
+                    }
+                }
+            }
+
+            double target = clamped <= 0f
+                ? 0.0
+                : Math.Min(clamped * MaxIndicatorOpacity, MaxIndicatorOpacity);
+
+            // Skip imperceptible changes so a steady signal does not churn the render pass.
+            if (Math.Abs(indicator.Opacity - target) > 0.004)
+            {
+                indicator.Opacity = target;
+            }
+        }
+
+        // Builds the quantised RGB ramp once. Level i maps to i / (LoudnessRampSteps - 1).
+        private static Color[] BuildLoudnessRampColors()
+        {
+            var colors = new Color[LoudnessRampSteps];
+            for (int i = 0; i < LoudnessRampSteps; i++)
+            {
+                colors[i] = LoudnessColor((double)i / (LoudnessRampSteps - 1));
+            }
+
+            return colors;
+        }
+
+        // Piecewise-linear interpolation of the HSV anchors: hue walks the arc, saturation
+        // and value ramp too. Working in HSV (not RGB) is what keeps the mid range vivid.
+        private static Color LoudnessColor(double level)
+        {
+            if (level <= LoudnessRamp[0].Level)
+            {
+                return HsvToColor(LoudnessRamp[0].Hue, LoudnessRamp[0].Saturation, LoudnessRamp[0].Value);
+            }
+
+            for (int i = 1; i < LoudnessRamp.Length; i++)
+            {
+                var upper = LoudnessRamp[i];
+                if (level <= upper.Level)
+                {
+                    var lower = LoudnessRamp[i - 1];
+                    double t = (level - lower.Level) / (upper.Level - lower.Level);
+                    return HsvToColor(
+                        lower.Hue + ((upper.Hue - lower.Hue) * t),
+                        lower.Saturation + ((upper.Saturation - lower.Saturation) * t),
+                        lower.Value + ((upper.Value - lower.Value) * t));
+                }
+            }
+
+            var last = LoudnessRamp[LoudnessRamp.Length - 1];
+            return HsvToColor(last.Hue, last.Saturation, last.Value);
+        }
+
+        private static Color HsvToColor(double hue, double saturation, double value)
+        {
+            hue = ((hue % 360.0) + 360.0) % 360.0;
+            saturation = Math.Clamp(saturation, 0.0, 1.0);
+            value = Math.Clamp(value, 0.0, 1.0);
+
+            double chroma = value * saturation;
+            double sector = hue / 60.0;
+            double second = chroma * (1.0 - Math.Abs((sector % 2.0) - 1.0));
+            double match = value - chroma;
+
+            double r = 0.0;
+            double g = 0.0;
+            double b = 0.0;
+            switch ((int)sector)
+            {
+                case 0: r = chroma; g = second; break;
+                case 1: r = second; g = chroma; break;
+                case 2: g = chroma; b = second; break;
+                case 3: g = second; b = chroma; break;
+                case 4: r = second; b = chroma; break;
+                default: r = chroma; b = second; break;
+            }
+
+            return Color.FromArgb(
+                0xFF,
+                (byte)Math.Round((r + match) * 255.0),
+                (byte)Math.Round((g + match) * 255.0),
+                (byte)Math.Round((b + match) * 255.0));
+        }
+
+        // Capture status arrives on a non-UI thread; marshal once (rare) and publish.
+        private void OnAudioCaptureStatusChanged(AudioCaptureStatus state, string message)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _audioCaptureState = state;
+                    _audioCaptureMessage = message;
+                    UpdateAudioFrontBackAvailability();
+                    AudioStatusChanged?.Invoke();
+                }));
+            }
+            catch
+            {
+                // A status update must never throw into the capture thread (or at shutdown).
+            }
+        }
+
+        /// <summary>
+        /// Front/back (and the four corners) need more than two channels. This uses the
+        /// capture's negotiated channel count, so it is known as soon as capture starts -
+        /// even before any audio is heard - and the impossible indicators are hidden rather
+        /// than shown dead.
+        /// </summary>
+        private void UpdateAudioFrontBackAvailability()
+        {
+            int channels = _audioCapture?.Channels ?? 0;
+            if (channels < 2)
+            {
+                return;
+            }
+
+            bool available = channels > 2;
+            bool changed = available != _audioFrontBackAvailable;
+            _audioFrontBackAvailable = available;
+
+            // Always (re)apply so a re-attach with a different channel count takes effect.
+            Visibility visibility = available ? Visibility.Visible : Visibility.Collapsed;
+            for (int i = 0; i < _frontBackIndicators.Length; i++)
+            {
+                Rectangle indicator = _frontBackIndicators[i];
+                indicator.Visibility = visibility;
+                if (!available)
+                {
+                    indicator.Opacity = 0.0;
+                }
+            }
+
+            if (changed)
+            {
+                AudioStatusChanged?.Invoke();
             }
         }
 

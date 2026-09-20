@@ -20,4 +20,13 @@
     <RootNamespace>CsOverlay</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      Audio capture (WASAPI loopback) and the biquad high-pass used by the directional
+      audio analyzer. NAudio 3.1.0 targets net9.0 and is clean on net10.0-windows.
+    -->
+    <PackageReference Include="NAudio.Core" Version="3.1.0" />
+    <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
+  </ItemGroup>
+
 </Project>

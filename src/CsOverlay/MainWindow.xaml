@@ -56,74 +56,197 @@
             <Setter Property="HorizontalAlignment" Value="Center" />
         </Style>
 
+        <!-- ============================================================
+             Directional audio indicator gradients. Each fades from the
+             screen edge/corner to fully transparent inward, so a lit
+             indicator is a soft peripheral glow rather than a hard shape.
+
+             These brush definitions are the FADE TEMPLATE: they fix the
+             geometry (axis for the edges, corner origin for the radials)
+             and the per-stop ALPHAS (opaque edge -> 0x66 -> fully
+             transparent). At startup the code clones each one per
+             indicator and rewrites only the stop RGB from a loudness
+             colour ramp (blue -> yellow -> orange -> red), so the shape
+             and the soft fade never change - only the colour and the
+             element Opacity track the level. The blue stops here are the
+             initial/idle colour; both are replaced on the first tick.
+             ============================================================ -->
+        <LinearGradientBrush x:Key="IndicatorLeftBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="IndicatorRightBrush" StartPoint="1,0" EndPoint="0,0">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="IndicatorFrontBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="IndicatorBackBrush" StartPoint="0,1" EndPoint="0,0">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </LinearGradientBrush>
+        <RadialGradientBrush x:Key="IndicatorFrontLeftBrush" GradientOrigin="0,0" Center="0,0" RadiusX="1" RadiusY="1">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </RadialGradientBrush>
+        <RadialGradientBrush x:Key="IndicatorFrontRightBrush" GradientOrigin="1,0" Center="1,0" RadiusX="1" RadiusY="1">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </RadialGradientBrush>
+        <RadialGradientBrush x:Key="IndicatorBackLeftBrush" GradientOrigin="0,1" Center="0,1" RadiusX="1" RadiusY="1">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </RadialGradientBrush>
+        <RadialGradientBrush x:Key="IndicatorBackRightBrush" GradientOrigin="1,1" Center="1,1" RadiusX="1" RadiusY="1">
+            <GradientStop Color="#FF3CAAFF" Offset="0" />
+            <GradientStop Color="#663CAAFF" Offset="0.45" />
+            <GradientStop Color="#003CAAFF" Offset="1" />
+        </RadialGradientBrush>
     </Window.Resources>
 
-    <!-- The container is visually transparent - each caption row paints its own fitted
-         #8C000000 bar instead. A Transparent brush paints nothing but stays hit-testable,
-         which is what keeps the panel draggable.
-         Width is not set: the slab auto-fits to the widest VISIBLE row (bounded by
-         MinWidth/MaxWidth in code). Height is floored by MinHeight, which is the fixed
-         3-row window, so the panel stops resizing as captions change; rows fill from the
-         bottom and unused rows are collapsed (they paint no bar). -->
-    <Border x:Name="OverlayPanel"
-            HorizontalAlignment="Left"
-            VerticalAlignment="Top"
-            Background="Transparent"
-            MouseLeftButtonDown="OverlayPanel_MouseLeftButtonDown"
-            MouseMove="OverlayPanel_MouseMove"
-            MouseLeftButtonUp="OverlayPanel_MouseLeftButtonUp"
-            MouseEnter="OverlayPanel_MouseEnter"
-            MouseLeave="OverlayPanel_MouseLeave">
-        <Grid>
-            <!-- No padding: each line carries its own, so the group width is exactly
-                 the widest bar and no bar edge is clipped. -->
-            <Border x:Name="CaptionArea"
-                    Padding="0">
-                <Grid ClipToBounds="True">
-                    <!-- Up to the configured max row count (_maxDisplayedRows) of
-                         already-wrapped rows are added here (oldest first), bottom-aligned
-                         so the newest row sits at the bottom. Unused rows are collapsed, so
-                         they take no space and paint no bar. -->
-                    <StackPanel x:Name="CaptionLinesPanel"
-                                VerticalAlignment="Bottom" />
+    <!-- The window fills the screen (or the game bounds). This root grid lets the
+         full-surface audio indicator layer sit BEHIND the caption panel at the screen
+         edges, while the panel keeps its own margin-based placement. -->
+    <Grid>
 
-                    <!-- Quiet hint for the no-caption states. -->
-                    <TextBlock x:Name="CaptionStatusText"
-                               Style="{StaticResource StatusBar}"
-                               Text="Live captions starting..."
-                               Foreground="#80FFFFFF"
-                               FontFamily="Segoe UI"
-                               FontSize="13"
-                               FontStyle="Italic"
-                               TextWrapping="Wrap"
-                               VerticalAlignment="Center" />
-                </Grid>
-            </Border>
+        <!-- ============================================================
+             Directional audio indicators: a thin, soft gradient glow at
+             each screen edge/corner. Layout is a 3x3 grid:
+               top row    : FrontLeft | Front | FrontRight
+               middle row : Left      |       | Right
+               bottom row : BackLeft  | Back  | BackRight
+             Display-only. IsHitTestVisible is false on the layer AND on
+             every element (belt-and-braces), and the layer paints no
+             background, so the whole layer is excluded from WPF hit
+             testing. The layered window itself is made click-through
+             where these paint, in code, via WS_EX_TRANSPARENT.
+             ============================================================ -->
+        <Grid x:Name="AudioIndicatorLayer"
+              IsHitTestVisible="False"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <!-- The width grip. Hidden until the panel is hovered (faded in/out from
-                 code-behind) and non-hit-testable while hidden. It adjusts the max-width
-                 cap only: the height is the fixed 3-row window, so vertical resizing is
-                 meaningless. A plain transparent hit area with a small mark. -->
-            <Grid x:Name="ResizeGrips"
-                  Opacity="0"
-                  IsHitTestVisible="False">
+            <Rectangle x:Name="IndicatorFrontLeft" Grid.Row="0" Grid.Column="0"
+                       Width="110" Height="110" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Left" VerticalAlignment="Top"
+                       Fill="{StaticResource IndicatorFrontLeftBrush}" />
+            <Rectangle x:Name="IndicatorFront" Grid.Row="0" Grid.Column="1"
+                       Width="240" Height="14" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Top"
+                       Fill="{StaticResource IndicatorFrontBrush}" />
+            <Rectangle x:Name="IndicatorFrontRight" Grid.Row="0" Grid.Column="2"
+                       Width="110" Height="110" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Right" VerticalAlignment="Top"
+                       Fill="{StaticResource IndicatorFrontRightBrush}" />
 
-                <Grid x:Name="GripRight"
-                      Width="8"
-                      HorizontalAlignment="Right"
-                      Background="Transparent"
-                      Cursor="SizeWE"
-                      MouseLeftButtonDown="GripRight_MouseLeftButtonDown"
-                      MouseMove="Grip_MouseMove"
-                      MouseLeftButtonUp="Grip_MouseLeftButtonUp">
-                    <Rectangle Width="2" Height="26"
-                               RadiusX="1" RadiusY="1"
-                               Fill="#4DFFFFFF"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                </Grid>
-            </Grid>
+            <Rectangle x:Name="IndicatorLeft" Grid.Row="1" Grid.Column="0"
+                       Width="14" Height="240" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                       Fill="{StaticResource IndicatorLeftBrush}" />
+            <Rectangle x:Name="IndicatorRight" Grid.Row="1" Grid.Column="2"
+                       Width="14" Height="240" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                       Fill="{StaticResource IndicatorRightBrush}" />
 
+            <Rectangle x:Name="IndicatorBackLeft" Grid.Row="2" Grid.Column="0"
+                       Width="110" Height="110" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                       Fill="{StaticResource IndicatorBackLeftBrush}" />
+            <Rectangle x:Name="IndicatorBack" Grid.Row="2" Grid.Column="1"
+                       Width="240" Height="14" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                       Fill="{StaticResource IndicatorBackBrush}" />
+            <Rectangle x:Name="IndicatorBackRight" Grid.Row="2" Grid.Column="2"
+                       Width="110" Height="110" Opacity="0" IsHitTestVisible="False"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                       Fill="{StaticResource IndicatorBackRightBrush}" />
         </Grid>
-    </Border>
+
+        <!-- The container is visually transparent - each caption row paints its own fitted
+             #8C000000 bar instead. A Transparent brush paints nothing but stays hit-testable,
+             which is what keeps the panel draggable.
+             Width is not set: the slab auto-fits to the widest VISIBLE row (bounded by
+             MinWidth/MaxWidth in code). Height is floored by MinHeight, which is the fixed
+             3-row window, so the panel stops resizing as captions change; rows fill from the
+             bottom and unused rows are collapsed (they paint no bar). -->
+        <Border x:Name="OverlayPanel"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="Transparent"
+                MouseLeftButtonDown="OverlayPanel_MouseLeftButtonDown"
+                MouseMove="OverlayPanel_MouseMove"
+                MouseLeftButtonUp="OverlayPanel_MouseLeftButtonUp"
+                MouseEnter="OverlayPanel_MouseEnter"
+                MouseLeave="OverlayPanel_MouseLeave">
+            <Grid>
+                <!-- No padding: each line carries its own, so the group width is exactly
+                     the widest bar and no bar edge is clipped. -->
+                <Border x:Name="CaptionArea"
+                        Padding="0">
+                    <Grid ClipToBounds="True">
+                        <!-- Up to the configured max row count (_maxDisplayedRows) of
+                             already-wrapped rows are added here (oldest first), bottom-aligned
+                             so the newest row sits at the bottom. Unused rows are collapsed, so
+                             they take no space and paint no bar. -->
+                        <StackPanel x:Name="CaptionLinesPanel"
+                                    VerticalAlignment="Bottom" />
+
+                        <!-- Quiet hint for the no-caption states. -->
+                        <TextBlock x:Name="CaptionStatusText"
+                                   Style="{StaticResource StatusBar}"
+                                   Text="Live captions starting..."
+                                   Foreground="#80FFFFFF"
+                                   FontFamily="Segoe UI"
+                                   FontSize="13"
+                                   FontStyle="Italic"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- The width grip. Hidden until the panel is hovered (faded in/out from
+                     code-behind) and non-hit-testable while hidden. It adjusts the max-width
+                     cap only: the height is the fixed 3-row window, so vertical resizing is
+                     meaningless. A plain transparent hit area with a small mark. -->
+                <Grid x:Name="ResizeGrips"
+                      Opacity="0"
+                      IsHitTestVisible="False">
+
+                    <Grid x:Name="GripRight"
+                          Width="8"
+                          HorizontalAlignment="Right"
+                          Background="Transparent"
+                          Cursor="SizeWE"
+                          MouseLeftButtonDown="GripRight_MouseLeftButtonDown"
+                          MouseMove="Grip_MouseMove"
+                          MouseLeftButtonUp="Grip_MouseLeftButtonUp">
+                        <Rectangle Width="2" Height="26"
+                                   RadiusX="1" RadiusY="1"
+                                   Fill="#4DFFFFFF"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Grid>
+
+            </Grid>
+        </Border>
+    </Grid>
 </Window>

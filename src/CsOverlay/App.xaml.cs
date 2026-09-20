@@ -17,6 +17,8 @@ namespace CsOverlay
         private HotkeyService? _hotkey;
         private LiveCaptionReader? _captions;
         private LiveCaptionsWindowHider? _captionsHider;
+        private AudioCaptureService? _audioCapture;
+        private DirectionalAudioAnalyzer? _audioAnalyzer;
 
         // Last Live Captions hiding state we acted on, so ApplyLiveCaptionsHiding() only
         // reacts to a real transition of the setting or a changed target window instead of
@@ -84,6 +86,10 @@ namespace CsOverlay
 
             _tracker.Start();
 
+            // Directional audio capture is opt-in; it is created only when the setting is
+            // on and torn down again when it is switched off.
+            ApplyAudioIndicators();
+
             // Start hidden unless the previous session left the overlay visible.
             if (settings.OverlayVisible)
             {
@@ -102,6 +108,7 @@ namespace CsOverlay
             // so a slow or unresponsive target can never hang shutdown.
             _captionsHider?.RestoreAndWait(1500);
 
+            DisposeAudio();
             _captions?.Stop();
             _captions?.Dispose();
             _hotkey?.Dispose();
@@ -178,6 +185,74 @@ namespace CsOverlay
 
             // Hide or restore the Live Captions window when that preference changed.
             ApplyLiveCaptionsHiding();
+
+            // Enable/disable capture and live-apply threshold/sensitivity changes without
+            // restarting capture.
+            ApplyAudioIndicators();
+        }
+
+        /// <summary>
+        /// Creates, starts, reconfigures or tears down the directional audio pipeline
+        /// according to the current settings. Threshold and sensitivity are applied to the
+        /// running analyzer in place, so capture is never restarted for a settings change.
+        /// </summary>
+        private void ApplyAudioIndicators()
+        {
+            if (_settingsService is null)
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.Settings;
+
+            if (!settings.AudioIndicatorsEnabled)
+            {
+                DisposeAudio();
+                return;
+            }
+
+            if (_audioAnalyzer is null)
+            {
+                _audioAnalyzer = new DirectionalAudioAnalyzer();
+            }
+
+            _audioAnalyzer.Configure(settings.AudioThresholdHz, settings.AudioSensitivity);
+
+            if (_audioCapture is null)
+            {
+                var capture = new AudioCaptureService();
+                capture.FrameSink = _audioAnalyzer.Process;
+                _audioCapture = capture;
+                capture.Start();
+            }
+
+            // Hand the ONE pipeline to the overlay so it renders the indicators from it.
+            _mainWindow?.AttachAudio(_audioAnalyzer, _audioCapture);
+        }
+
+        /// <summary>
+        /// Stops and disposes the directional audio pipeline. Safe to call when it was
+        /// never created.
+        /// </summary>
+        private void DisposeAudio()
+        {
+            // Unsubscribe the overlay BEFORE stopping/disposing, so no event fires into a
+            // closed (or closing) window.
+            _mainWindow?.DetachAudio();
+
+            if (_audioCapture is not null)
+            {
+                _audioCapture.FrameSink = null;
+                _audioCapture.Stop();
+                _audioCapture.Dispose();
+                _audioCapture = null;
+            }
+
+            if (_audioAnalyzer is not null)
+            {
+                _audioAnalyzer.Dispose();
+                _audioAnalyzer = null;
+            }
         }
 
         /// <summary>
@@ -398,6 +473,50 @@ namespace CsOverlay
             {
                 _mainWindow.EnforceTopmost();
             }
+
+            // Piggyback the Live Captions drift guard on the poll that is already running,
+            // so no extra timer or event plumbing is needed.
+            ReassertLiveCaptionsHiding();
+        }
+
+        /// <summary>
+        /// Cheap periodic drift guard for the Live Captions window, run on every ~1 s tracker
+        /// tick while the hide preference is on. A fullscreen game's display-mode change can
+        /// make Windows pull the parked window back onto a monitor; this notices and re-hides
+        /// it within about a second. It is a no-op when the setting is off or Live Captions is
+        /// not running, and in the steady state it costs a single GetWindowRect - the hider
+        /// only issues a cross-process SetWindowPos when the window has actually come back
+        /// on screen. It never re-captures the remembered original rect.
+        /// </summary>
+        private void ReassertLiveCaptionsHiding()
+        {
+            if (_settingsService?.Settings.HideLiveCaptionsWindow != true
+                || _captionsHider is null
+                || _captions is null)
+            {
+                return;
+            }
+
+            IntPtr handle = _captions.CaptionsWindowHandle;
+            if (handle == IntPtr.Zero)
+            {
+                return; // Live Captions is not running: nothing to re-hide
+            }
+
+            if (handle != _hideLiveCaptionsHandle || !_captionsHider.IsHidden)
+            {
+                // A new window (Live Captions restarted), or the initial hide has not taken
+                // yet: run the full guarded hide path for this handle.
+                _captionsHider.Hide(handle);
+            }
+            else
+            {
+                // Same window we already hold: let the hider cheaply check for drift.
+                _captionsHider.Reassert();
+            }
+
+            _hideLiveCaptionsHandle = handle;
+            _hideLiveCaptionsApplied = true;
         }
 
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

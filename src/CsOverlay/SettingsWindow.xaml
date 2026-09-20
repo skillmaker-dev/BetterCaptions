@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CsOverlay Options"
         Width="720"
-        Height="780"
+        Height="840"
         MinWidth="560"
         MinHeight="520"
         WindowStartupLocation="CenterScreen"
@@ -88,7 +88,15 @@
 
             <!-- The existing controls, kept at their established width. -->
             <StackPanel MaxWidth="404" HorizontalAlignment="Left">
-                <TextBlock Text="Captions" Style="{StaticResource SectionHeader}" Margin="0,6,0,6" />
+                <!-- The overlay window as a whole: the SAME show/hide the tray and the
+                     global hotkey drive. It mirrors the overlay's live state and is a
+                     master switch, so it sits first. -->
+                <TextBlock Text="Overlay" Style="{StaticResource SectionHeader}" Margin="0,6,0,6" />
+
+                <CheckBox x:Name="ShowOverlayCheck" Content="Show overlay" Margin="0,2,0,0"
+                          Checked="ShowOverlayCheck_Changed" Unchecked="ShowOverlayCheck_Changed" />
+
+                <TextBlock Text="Captions" Style="{StaticResource SectionHeader}" />
 
                 <!-- Text colour: live preview + editable hex + preset swatches. -->
                 <StackPanel Margin="0,4">
@@ -215,6 +223,74 @@
 
                 <CheckBox x:Name="CenterPanelCheck" Content="Center panel on screen" Margin="0,2,0,0"
                           Checked="CenterPanelCheck_Changed" Unchecked="CenterPanelCheck_Changed" />
+
+                <!-- Directional audio indicators (the user is hard of hearing; this turns
+                     above-threshold system audio into a peripheral direction cue). -->
+                <TextBlock Text="Audio" Style="{StaticResource SectionHeader}" />
+
+                <CheckBox x:Name="AudioIndicatorsCheck" Content="Show directional audio indicators"
+                          Margin="0,2,0,0"
+                          Checked="AudioIndicatorsCheck_Changed" Unchecked="AudioIndicatorsCheck_Changed" />
+
+                <Grid Margin="0,6,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="72" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Threshold" Style="{StaticResource RowLabel}" />
+                    <Slider x:Name="AudioThresholdSlider" Grid.Column="1"
+                            Minimum="200" Maximum="8000"
+                            TickFrequency="50" IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center"
+                            ValueChanged="AudioThresholdSlider_ValueChanged" />
+                    <TextBlock x:Name="AudioThresholdValue" Grid.Column="2" Style="{StaticResource RowValue}" />
+                </Grid>
+
+                <Grid Margin="0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="72" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Sensitivity" Style="{StaticResource RowLabel}" />
+                    <Slider x:Name="AudioSensitivitySlider" Grid.Column="1"
+                            Minimum="0.25" Maximum="4"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center"
+                            ToolTip="Overall gain: affects BOTH indicator brightness and colour."
+                            ValueChanged="AudioSensitivitySlider_ValueChanged" />
+                    <TextBlock x:Name="AudioSensitivityValue" Grid.Column="2" Style="{StaticResource RowValue}" />
+                </Grid>
+
+                <Grid Margin="0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="72" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Loudness scale" Style="{StaticResource RowLabel}" />
+                    <Slider x:Name="AudioLoudnessScaleSlider" Grid.Column="1"
+                            Minimum="0.25" Maximum="4"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center"
+                            ToolTip="Colour only: how loud the audio must be before the colour ramp tops out (red). Higher = warm colours (yellow/orange/red) only on louder audio; lower = they appear sooner."
+                            ValueChanged="AudioLoudnessScaleSlider_ValueChanged" />
+                    <TextBlock x:Name="AudioLoudnessScaleValue" Grid.Column="2" Style="{StaticResource RowValue}" />
+                </Grid>
+
+                <TextBlock Margin="150,2,0,0"
+                           FontSize="11"
+                           Foreground="#FF555555"
+                           TextWrapping="Wrap"
+                           Text="Loudness scale sets how loud the audio must be before the ramp reaches red - colour only. Sensitivity above is the overall gain and also affects brightness." />
+
+                <TextBlock x:Name="AudioStatusText"
+                           Margin="0,6,0,0"
+                           TextWrapping="Wrap"
+                           FontSize="11"
+                           Foreground="#FF555555"
+                           Text="Indicators are off." />
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

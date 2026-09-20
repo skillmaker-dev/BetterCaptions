@@ -117,5 +117,37 @@ namespace CsOverlay.Models
 
         /// <summary>Virtual-key code. 0x4F == 'O'.</summary>
         public uint HotkeyKey { get; set; } = 0x4F;
+
+        /// <summary>
+        /// When true CsOverlay captures the system audio output (WASAPI loopback) and
+        /// drives directional audio indicators. Default false, so existing installs keep
+        /// their current behaviour until the feature is explicitly turned on.
+        /// </summary>
+        public bool AudioIndicatorsEnabled { get; set; } = false;
+
+        /// <summary>
+        /// High-pass cut-off frequency, in Hz, used by the directional analyzer. Only
+        /// energy ABOVE this frequency is allowed to light an indicator, so it selects
+        /// which in-game cues are visualised. Applied live - changing it retunes the
+        /// running filter without restarting capture. Default 1500.
+        /// </summary>
+        public double AudioThresholdHz { get; set; } = 1500;
+
+        /// <summary>
+        /// Linear gain applied to each channel BEFORE the dB mapping, so quiet cues can
+        /// be boosted into the visible window. 1.0 is unity (no change). Applied live
+        /// without restarting capture. Default 1.0.
+        /// </summary>
+        public double AudioSensitivity { get; set; } = 1.0;
+
+        /// <summary>
+        /// The level that drives the indicator colour ramp is DIVIDED by this scale - i.e. it
+        /// sets how loud the audio must be before the indicator colour reaches the warm end of
+        /// the ramp (red). Above 1.0 reaches yellow/orange/red only at louder audio; below 1.0
+        /// reaches them sooner. It does NOT affect indicator brightness/opacity, which stays
+        /// the unscaled level * MaxIndicatorOpacity. The overlay clamps it to 0.25..4.0 and
+        /// applies it live. Default 1.0 (the ramp as designed).
+        /// </summary>
+        public double AudioLoudnessScale { get; set; } = 1.0;
     }
 }

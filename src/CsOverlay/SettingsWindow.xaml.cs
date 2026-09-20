@@ -51,6 +51,16 @@ namespace CsOverlay
 
         private bool _previewImageRequested;
 
+        // The overlay instance we read the read-only audio status from (through
+        // Application.Current.MainWindow). Never mutated; unsubscribed on close.
+        private MainWindow? _audioOverlay;
+
+        // True only while the Show overlay checkbox is being synced FROM the overlay, so
+        // that sync cannot re-enter the toggle handler. The handler itself is idempotent
+        // (ShowOverlay/HideOverlay early-return when already in that state), but this keeps
+        // the sync a pure read.
+        private bool _syncingOverlayCheck;
+
         // True from field initialisation until the constructor has finished loading and
         // seeding every control. XAML sets slider Minimum/Maximum, which coerces Value
         // and raises ValueChanged DURING InitializeComponent - before the constructor
@@ -96,7 +106,20 @@ namespace CsOverlay
             CenterPanelCheck.IsChecked = settings.PanelCenteredHorizontally;
             HideLiveCaptionsCheck.IsChecked = settings.HideLiveCaptionsWindow;
 
+            AudioIndicatorsCheck.IsChecked = settings.AudioIndicatorsEnabled;
+            AudioThresholdSlider.Value = Math.Clamp(settings.AudioThresholdHz, AudioThresholdSlider.Minimum, AudioThresholdSlider.Maximum);
+            AudioThresholdValue.Text = ((int)Math.Round(AudioThresholdSlider.Value)).ToString() + " Hz";
+            AudioSensitivitySlider.Value = Math.Clamp(settings.AudioSensitivity, AudioSensitivitySlider.Minimum, AudioSensitivitySlider.Maximum);
+            AudioSensitivityValue.Text = AudioSensitivitySlider.Value.ToString("0.00") + "x";
+            AudioLoudnessScaleSlider.Value = Math.Clamp(settings.AudioLoudnessScale, AudioLoudnessScaleSlider.Minimum, AudioLoudnessScaleSlider.Maximum);
+            AudioLoudnessScaleValue.Text = AudioLoudnessScaleSlider.Value.ToString("0.00") + "x";
+
+            SubscribeAudioStatus();
             RenderPreview();
+            UpdateAudioStatus();
+
+            // Seed the show/hide checkbox from the overlay's real visibility.
+            RefreshOverlayCheck();
         }
 
         private void NotifyChanged()
@@ -111,6 +134,7 @@ namespace CsOverlay
 
             // Any appearance change re-renders the preview with the SAME shared rules.
             RenderPreview();
+            UpdateAudioStatus();
         }
 
         // ------------------------------------------------------------------
@@ -317,6 +341,71 @@ namespace CsOverlay
         // Checkboxes
         // ------------------------------------------------------------------
 
+        /// <summary>
+        /// Shows or hides the caption overlay through the overlay's own public methods -
+        /// the same ones the tray menu and the global hotkey call. Deliberately does NOT
+        /// call <see cref="NotifyChanged"/>: <c>ShowOverlay</c>/<c>HideOverlay</c> already
+        /// persist <c>OverlayVisible</c> and re-apply click-through, so saving here too
+        /// would double-save and could fight them.
+        /// </summary>
+        private void ShowOverlayCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_initializing || _syncingOverlayCheck || _settingsService is null)
+            {
+                return;
+            }
+
+            MainWindow? overlay = Application.Current?.MainWindow as MainWindow;
+            if (overlay is null)
+            {
+                // No reachable overlay: keep the control honest and do nothing.
+                RefreshOverlayCheck();
+                return;
+            }
+
+            if (ShowOverlayCheck.IsChecked == true)
+            {
+                overlay.ShowOverlay();
+            }
+            else
+            {
+                overlay.HideOverlay();
+            }
+        }
+
+        /// <summary>
+        /// Mirrors the overlay's current visibility into the checkbox and greys the control
+        /// out when no overlay is reachable. Called on load and whenever this window is
+        /// activated, so a show/hide made by the tray or the hotkey (or by the app at
+        /// startup) cannot leave the checkbox stale. A full two-way binding is not used:
+        /// the overlay has no visibility-changed event to bind against.
+        /// </summary>
+        private void RefreshOverlayCheck()
+        {
+            if (ShowOverlayCheck is null)
+            {
+                return;
+            }
+
+            MainWindow? overlay = Application.Current?.MainWindow as MainWindow;
+            if (overlay is null)
+            {
+                ShowOverlayCheck.IsEnabled = false;
+                return;
+            }
+
+            ShowOverlayCheck.IsEnabled = true;
+            _syncingOverlayCheck = true;
+            try
+            {
+                ShowOverlayCheck.IsChecked = overlay.IsOverlayVisible;
+            }
+            finally
+            {
+                _syncingOverlayCheck = false;
+            }
+        }
+
         private void CenterTextCheck_Changed(object sender, RoutedEventArgs e)
         {
             if (_initializing || _settingsService is null)
@@ -356,6 +445,166 @@ namespace CsOverlay
 
             _settingsService.Settings.HideLiveCaptionsWindow = HideLiveCaptionsCheck.IsChecked == true;
             NotifyChanged();
+        }
+
+        // ------------------------------------------------------------------
+        // Audio
+        // ------------------------------------------------------------------
+
+        private void AudioIndicatorsCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.AudioIndicatorsEnabled = AudioIndicatorsCheck.IsChecked == true;
+            NotifyChanged();
+        }
+
+        private void AudioThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.AudioThresholdHz = AudioThresholdSlider.Value;
+            AudioThresholdValue.Text = ((int)Math.Round(AudioThresholdSlider.Value)).ToString() + " Hz";
+            NotifyChanged();
+        }
+
+        private void AudioSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.AudioSensitivity = AudioSensitivitySlider.Value;
+            AudioSensitivityValue.Text = AudioSensitivitySlider.Value.ToString("0.00") + "x";
+            NotifyChanged();
+        }
+
+        /// <summary>
+        /// Writes <see cref="AppSettings.AudioLoudnessScale"/>: the level used ONLY by the
+        /// colour ramp is divided by this scale, so a higher value reaches the warm colours
+        /// (yellow/orange/red) only on louder audio and a lower value reaches them sooner.
+        /// The overlay reads it every tick, so this live-applies; brightness is unaffected.
+        /// Distinct from Sensitivity, which is the overall gain and also changes brightness.
+        /// </summary>
+        private void AudioLoudnessScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.AudioLoudnessScale = AudioLoudnessScaleSlider.Value;
+            AudioLoudnessScaleValue.Text = AudioLoudnessScaleSlider.Value.ToString("0.00") + "x";
+            NotifyChanged();
+        }
+
+        /// <summary>
+        /// Subscribes (once) to the overlay's read-only audio status event. The overlay is
+        /// reached through Application.Current.MainWindow - a public surface that already
+        /// exists - because App owns the audio services privately and may not be edited.
+        /// </summary>
+        private void SubscribeAudioStatus()
+        {
+            MainWindow? overlay = Application.Current?.MainWindow as MainWindow;
+            if (ReferenceEquals(overlay, _audioOverlay))
+            {
+                return;
+            }
+
+            UnsubscribeAudioStatus();
+            _audioOverlay = overlay;
+
+            if (_audioOverlay is not null)
+            {
+                _audioOverlay.AudioStatusChanged += OnOverlayAudioStatusChanged;
+            }
+        }
+
+        private void UnsubscribeAudioStatus()
+        {
+            if (_audioOverlay is not null)
+            {
+                _audioOverlay.AudioStatusChanged -= OnOverlayAudioStatusChanged;
+                _audioOverlay = null;
+            }
+        }
+
+        private void OnOverlayAudioStatusChanged()
+        {
+            UpdateAudioStatus();
+        }
+
+        /// <summary>Refreshes the capture status line from the overlay's read-only surface.</summary>
+        private void UpdateAudioStatus()
+        {
+            if (AudioStatusText is null || _settingsService is null)
+            {
+                return;
+            }
+
+            SubscribeAudioStatus();
+
+            if (!_settingsService.Settings.AudioIndicatorsEnabled)
+            {
+                AudioStatusText.Text = "Indicators are off.";
+                return;
+            }
+
+            MainWindow? overlay = _audioOverlay;
+            if (overlay is null || !overlay.AudioIndicatorsActive)
+            {
+                AudioStatusText.Text = "Starting audio capture...";
+                return;
+            }
+
+            string message = overlay.AudioCaptureMessage;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message = DescribeAudioState(overlay.AudioCaptureState);
+            }
+
+            if (!overlay.AudioFrontBackAvailable)
+            {
+                message += " Front/back indicators need 5.1/7.1 output; showing left/right only.";
+            }
+
+            AudioStatusText.Text = message;
+        }
+
+        private static string DescribeAudioState(AudioCaptureStatus state) => state switch
+        {
+            AudioCaptureStatus.Capturing => "Capturing system audio.",
+            AudioCaptureStatus.NoDevice => "No audio output device was found.",
+            AudioCaptureStatus.DeviceInvalidated => "Audio device changed; reconnecting...",
+            AudioCaptureStatus.PossiblyExclusiveOrMuted =>
+                "No audio detected. The output may be muted, or another app holds it in exclusive mode - "
+                + "disable exclusive mode in Windows sound settings.",
+            AudioCaptureStatus.Failed => "Audio capture failed.",
+            _ => "Audio capture status unknown."
+        };
+
+        /// <summary>
+        /// The tray and the global hotkey can show/hide the overlay while this window is
+        /// open, so re-read the overlay's real state every time this window is activated:
+        /// that keeps the Show overlay checkbox honest without a two-way binding.
+        /// </summary>
+        protected override void OnActivated(EventArgs e)
+        {
+            base.OnActivated(e);
+            RefreshOverlayCheck();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            UnsubscribeAudioStatus();
+            base.OnClosed(e);
         }
 
         /// <summary>
