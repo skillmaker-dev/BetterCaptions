@@ -20,14 +20,16 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish (${{ matrix.rid }})
+    name: Publish (${{ matrix.label }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        rid:
-          - win-x64
-          - win-arm64
+        include:
+          - { rid: win-x64,   self_contained: true,  label: win-x64 }
+          - { rid: win-x64,   self_contained: false, label: win-x64-requires-dotnet }
+          - { rid: win-arm64, self_contained: true,  label: win-arm64 }
+          - { rid: win-arm64, self_contained: false, label: win-arm64-requires-dotnet }
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +39,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # Self-contained single-file publish so users need no .NET runtime.
+      # Single-file publish. self_contained=true bundles the .NET runtime so
+      # users need nothing installed; false keeps the exe small for users who
+      # already have the .NET 10 desktop runtime.
       # Trimming is intentionally NOT enabled: it is unsupported for WPF.
       - name: Publish
         shell: pwsh
@@ -45,18 +49,18 @@ jobs:
           dotnet publish src/CsOverlay/CsOverlay.csproj
           -c Release
           -r ${{ matrix.rid }}
-          --self-contained true
+          --self-contained ${{ matrix.self_contained }}
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
+          -p:EnableCompressionInSingleFile=${{ matrix.self_contained }}
           -p:DebugType=none
-          -o publish/${{ matrix.rid }}
+          -o publish/${{ matrix.label }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CsOverlay-${{ matrix.rid }}
-          path: publish/${{ matrix.rid }}/CsOverlay.exe
+          name: CsOverlay-${{ matrix.label }}
+          path: publish/${{ matrix.label }}/CsOverlay.exe
           if-no-files-found: error
 
   release:
@@ -78,6 +82,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item "artifacts/CsOverlay-win-x64/CsOverlay.exe" "release/CsOverlay-win-x64.exe"
           Copy-Item "artifacts/CsOverlay-win-arm64/CsOverlay.exe" "release/CsOverlay-win-arm64.exe"
+          Copy-Item "artifacts/CsOverlay-win-x64-requires-dotnet/CsOverlay.exe" "release/CsOverlay-win-x64-requires-dotnet.exe"
+          Copy-Item "artifacts/CsOverlay-win-arm64-requires-dotnet/CsOverlay.exe" "release/CsOverlay-win-arm64-requires-dotnet.exe"
 
       - name: Create GitHub Release
         shell: pwsh
@@ -87,6 +93,8 @@ jobs:
           gh release create "${{ github.ref_name }}"
           release/CsOverlay-win-x64.exe
           release/CsOverlay-win-arm64.exe
+          release/CsOverlay-win-x64-requires-dotnet.exe
+          release/CsOverlay-win-arm64-requires-dotnet.exe
           --title "${{ github.ref_name }}"
           --generate-notes
           -R "${{ github.repository }}"

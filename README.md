@@ -27,16 +27,25 @@ CsOverlay is a small tray utility for people who are hard of hearing. It reads t
 - Windows Live Captions must be running for captions to appear. Press Win+Ctrl+L to start it. If it is not running, the panel shows a status message instead.
 - For front/back and corner indicators, an output device with more than two channels (for example 5.1 or 7.1). On stereo output only left/right are shown.
 - To build from source: the .NET 10 SDK.
-- To run a release build: nothing else. The release builds are self-contained.
+- To run a self-contained release build: nothing else. Those builds need no .NET installation.
+- To run a framework-dependent release build: the .NET 10 Desktop Runtime. It must be the Desktop Runtime, not just the base runtime, because CsOverlay is a WPF app.
 
 ## Download & run
 
-Download a build from the GitHub Releases page. Each release contains a self-contained, single-file `.exe` that needs no .NET installation:
+Download a build from the GitHub Releases page. Each release contains four single-file `.exe` builds: two architectures, each in a self-contained and a smaller framework-dependent flavour.
 
-- `win-x64` for most Intel and AMD PCs.
-- `win-arm64` for Windows on Arm devices (for example Snapdragon-based machines).
+| File | Architecture | Needs .NET installed | Approx. size |
+| --- | --- | --- | --- |
+| `CsOverlay-win-x64.exe` | Intel / AMD | No | 72 MB |
+| `CsOverlay-win-arm64.exe` | Windows on Arm | No | 68 MB |
+| `CsOverlay-win-x64-requires-dotnet.exe` | Intel / AMD | Yes, the .NET 10 Desktop Runtime | 1.5 MB |
+| `CsOverlay-win-arm64-requires-dotnet.exe` | Windows on Arm | Yes, the .NET 10 Desktop Runtime | 1.4 MB |
 
-If you are not sure which one you need, pick `win-x64` unless the PC is a Windows on Arm device.
+- `win-x64` is for most Intel and AMD PCs. `win-arm64` is for Windows on Arm devices, such as Snapdragon-based machines.
+- The **self-contained** builds bundle the .NET runtime and need nothing installed.
+- The **`requires-dotnet`** builds are about fifty times smaller, but they only start if the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) is already installed. If it is missing, Windows reports that when you try to run the file.
+
+If you are not sure which one you need, pick `CsOverlay-win-x64.exe`.
 
 Run the `.exe`. It starts with no window: only a tray icon appears. Start Windows Live Captions with Win+Ctrl+L, then show the overlay from the tray icon or with the hotkey.
 
