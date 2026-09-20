@@ -2,13 +2,13 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using CsOverlay.Interop;
+using BetterCaptions.Interop;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Moves the Windows Live Captions top-level window just off the visible desktop, while
-    /// its speech engine (and its UI Automation tree) keeps running, so only CsOverlay's own
+    /// its speech engine (and its UI Automation tree) keeps running, so only BetterCaptions's own
     /// captions are visible.
     ///
     /// It MOVES the window; it does not minimize it. Minimizing is a WINDOW STATE transition

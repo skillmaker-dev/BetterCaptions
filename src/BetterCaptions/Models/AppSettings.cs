@@ -1,8 +1,8 @@
-namespace CsOverlay.Models
+namespace BetterCaptions.Models
 {
     /// <summary>
     /// Persisted application settings. Serialized as JSON to
-    /// %LOCALAPPDATA%\CsOverlay\settings.json by <see cref="Services.SettingsService"/>.
+    /// %LOCALAPPDATA%\BetterCaptions\settings.json by <see cref="Services.SettingsService"/>.
     /// </summary>
     public sealed class AppSettings
     {
@@ -99,7 +99,7 @@ namespace CsOverlay.Models
         public bool CaptionTextCentered { get; set; } = false;
 
         /// <summary>
-        /// When true, CsOverlay minimizes the Windows Live Captions window (and marks it as
+        /// When true, BetterCaptions minimizes the Windows Live Captions window (and marks it as
         /// a tool window so it leaves the taskbar/Alt-Tab) while the speech engine and its
         /// UI Automation tree keep running, so only the overlay's own captions are visible.
         /// Restored on exit. Default false.
@@ -119,7 +119,7 @@ namespace CsOverlay.Models
         public uint HotkeyKey { get; set; } = 0x4F;
 
         /// <summary>
-        /// When true CsOverlay captures the system audio output (WASAPI loopback) and
+        /// When true BetterCaptions captures the system audio output (WASAPI loopback) and
         /// drives directional audio indicators. Default false, so existing installs keep
         /// their current behaviour until the feature is explicitly turned on.
         /// </summary>

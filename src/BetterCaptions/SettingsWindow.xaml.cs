@@ -8,10 +8,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using CsOverlay.Models;
-using CsOverlay.Services;
+using BetterCaptions.Models;
+using BetterCaptions.Services;
 
-namespace CsOverlay
+namespace BetterCaptions
 {
     /// <summary>
     /// An ordinary settings window: normal chrome, appears in the taskbar, movable,
@@ -693,7 +693,7 @@ namespace CsOverlay
         private static HttpClient CreatePreviewHttpClient()
         {
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "CsOverlay/1.0");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "BetterCaptions/1.0");
             return client;
         }
 

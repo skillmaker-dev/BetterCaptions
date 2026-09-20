@@ -6,7 +6,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Dsp;
 using NAudio.Wave;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Immutable snapshot of the smoothed, 0..1 per-direction audio levels. A UI thread

@@ -2,9 +2,9 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
-using CsOverlay.Interop;
+using BetterCaptions.Interop;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// System tray presence. The icon is generated at runtime so the app has no
@@ -38,7 +38,7 @@ namespace CsOverlay.Services
             _notifyIcon = new NotifyIcon
             {
                 Icon = _icon,
-                Text = "CsOverlay",
+                Text = "BetterCaptions",
                 Visible = true,
                 ContextMenuStrip = _menu
             };
@@ -74,7 +74,7 @@ namespace CsOverlay.Services
                 return;
             }
 
-            string safe = string.IsNullOrEmpty(text) ? "CsOverlay" : text;
+            string safe = string.IsNullOrEmpty(text) ? "BetterCaptions" : text;
 
             // The shell truncates tooltips beyond 63 characters.
             if (safe.Length > 63)

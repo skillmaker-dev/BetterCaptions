@@ -2,11 +2,11 @@ using System;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using CsOverlay.Interop;
-using CsOverlay.Models;
-using CsOverlay.Services;
+using BetterCaptions.Interop;
+using BetterCaptions.Models;
+using BetterCaptions.Services;
 
-namespace CsOverlay
+namespace BetterCaptions
 {
     public partial class App : Application
     {
@@ -378,15 +378,15 @@ namespace CsOverlay
                     candidate.Ctrl, candidate.Shift, candidate.Alt, candidate.Key);
 
                 _tray?.ShowNotification(
-                    "CsOverlay",
+                    "BetterCaptions",
                     $"{configuredText} is in use by another app \u2014 bound {boundText} instead.");
                 return;
             }
 
             // Nothing registered: keep running, tray icon is the fallback control.
-            _tray?.SetTooltip("CsOverlay \u2014 no hotkey");
+            _tray?.SetTooltip("BetterCaptions \u2014 no hotkey");
             _tray?.ShowNotification(
-                "CsOverlay",
+                "BetterCaptions",
                 "No global hotkey available \u2014 use the tray icon to toggle the overlay.");
         }
 
@@ -421,7 +421,7 @@ namespace CsOverlay
         private void ApplyHotkeyDisplay(HotkeyCandidate candidate)
         {
             string text = HotkeyFormatter.Format(candidate.Ctrl, candidate.Shift, candidate.Alt, candidate.Key);
-            _tray?.SetTooltip("CsOverlay \u2014 " + text);
+            _tray?.SetTooltip("BetterCaptions \u2014 " + text);
         }
 
         private readonly record struct HotkeyCandidate(bool Ctrl, bool Shift, bool Alt, uint Key);
@@ -522,8 +522,8 @@ namespace CsOverlay
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
             MessageBox.Show(
-                "CsOverlay encountered an unexpected error:\n\n" + e.Exception,
-                "CsOverlay - unexpected error",
+                "BetterCaptions encountered an unexpected error:\n\n" + e.Exception,
+                "BetterCaptions - unexpected error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
 

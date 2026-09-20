@@ -3,7 +3,7 @@ using System.Threading;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>High-level state of the system-audio capture.</summary>
     public enum AudioCaptureStatus

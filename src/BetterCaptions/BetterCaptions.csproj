@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>CsOverlay</AssemblyName>
+    <AssemblyName>BetterCaptions</AssemblyName>
     <!--
       WFO0003 is a WinForms analyzer rule asking for "ApplicationHighDpiMode" instead of
       manifest DPI settings. It is a false positive here: this is a WPF app, and WPF reads
@@ -17,7 +17,7 @@
       NotifyIcon, so the WinForms DPI API is not applicable.
     -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
-    <RootNamespace>CsOverlay</RootNamespace>
+    <RootNamespace>BetterCaptions</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

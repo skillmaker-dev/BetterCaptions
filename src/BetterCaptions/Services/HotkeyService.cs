@@ -1,8 +1,8 @@
 using System;
 using System.Runtime.InteropServices;
-using CsOverlay.Interop;
+using BetterCaptions.Interop;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Registers a single system-wide hotkey against a supplied window handle.
@@ -45,7 +45,7 @@ namespace CsOverlay.Services
             error =
                 "Could not register the global hotkey (default Ctrl+Shift+O).\n\n" +
                 "Another application is most likely already using this key combination. " +
-                "Close it or edit the hotkey in %LOCALAPPDATA%\\CsOverlay\\settings.json.\n\n" +
+                "Close it or edit the hotkey in %LOCALAPPDATA%\\BetterCaptions\\settings.json.\n\n" +
                 $"(Win32 error {win32Error})";
             return false;
         }

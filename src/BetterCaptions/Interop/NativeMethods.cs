@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace CsOverlay.Interop
+namespace BetterCaptions.Interop
 {
     /// <summary>
     /// P/Invoke declarations used by the overlay. All calls are out-of-process:

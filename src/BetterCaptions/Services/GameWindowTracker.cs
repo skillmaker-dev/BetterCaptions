@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
-using CsOverlay.Interop;
+using BetterCaptions.Interop;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Polls once per second for the Counter-Strike: Source window and reports its

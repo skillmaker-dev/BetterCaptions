@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Renders modifier + virtual-key combinations as readable strings,

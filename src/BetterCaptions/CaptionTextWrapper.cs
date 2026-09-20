@@ -5,7 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace CsOverlay
+namespace BetterCaptions
 {
     /// <summary>
     /// The SHARED caption rendering rules. BOTH the overlay panel (<see cref="MainWindow"/>)

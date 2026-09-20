@@ -46,7 +46,7 @@ jobs:
       - name: Publish
         shell: pwsh
         run: >
-          dotnet publish src/CsOverlay/CsOverlay.csproj
+          dotnet publish src/BetterCaptions/BetterCaptions.csproj
           -c Release
           -r ${{ matrix.rid }}
           --self-contained ${{ matrix.self_contained }}
@@ -59,8 +59,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CsOverlay-${{ matrix.label }}
-          path: publish/${{ matrix.label }}/CsOverlay.exe
+          name: BetterCaptions-${{ matrix.label }}
+          path: publish/${{ matrix.label }}/BetterCaptions.exe
           if-no-files-found: error
 
   release:
@@ -80,10 +80,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Copy-Item "artifacts/CsOverlay-win-x64/CsOverlay.exe" "release/CsOverlay-win-x64.exe"
-          Copy-Item "artifacts/CsOverlay-win-arm64/CsOverlay.exe" "release/CsOverlay-win-arm64.exe"
-          Copy-Item "artifacts/CsOverlay-win-x64-requires-dotnet/CsOverlay.exe" "release/CsOverlay-win-x64-requires-dotnet.exe"
-          Copy-Item "artifacts/CsOverlay-win-arm64-requires-dotnet/CsOverlay.exe" "release/CsOverlay-win-arm64-requires-dotnet.exe"
+          Copy-Item "artifacts/BetterCaptions-win-x64/BetterCaptions.exe" "release/BetterCaptions-win-x64.exe"
+          Copy-Item "artifacts/BetterCaptions-win-arm64/BetterCaptions.exe" "release/BetterCaptions-win-arm64.exe"
+          Copy-Item "artifacts/BetterCaptions-win-x64-requires-dotnet/BetterCaptions.exe" "release/BetterCaptions-win-x64-requires-dotnet.exe"
+          Copy-Item "artifacts/BetterCaptions-win-arm64-requires-dotnet/BetterCaptions.exe" "release/BetterCaptions-win-arm64-requires-dotnet.exe"
 
       - name: Create GitHub Release
         shell: pwsh
@@ -91,10 +91,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           gh release create "${{ github.ref_name }}"
-          release/CsOverlay-win-x64.exe
-          release/CsOverlay-win-arm64.exe
-          release/CsOverlay-win-x64-requires-dotnet.exe
-          release/CsOverlay-win-arm64-requires-dotnet.exe
+          release/BetterCaptions-win-x64.exe
+          release/BetterCaptions-win-arm64.exe
+          release/BetterCaptions-win-x64-requires-dotnet.exe
+          release/BetterCaptions-win-arm64-requires-dotnet.exe
           --title "${{ github.ref_name }}"
           --generate-notes
           -R "${{ github.repository }}"

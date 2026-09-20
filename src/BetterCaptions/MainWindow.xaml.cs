@@ -8,11 +8,11 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using CsOverlay.Interop;
-using CsOverlay.Models;
-using CsOverlay.Services;
+using BetterCaptions.Interop;
+using BetterCaptions.Models;
+using BetterCaptions.Services;
 
-namespace CsOverlay
+namespace BetterCaptions
 {
     public partial class MainWindow : Window
     {

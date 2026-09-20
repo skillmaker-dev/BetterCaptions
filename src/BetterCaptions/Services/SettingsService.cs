@@ -1,13 +1,13 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using CsOverlay.Models;
+using BetterCaptions.Models;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Loads and saves <see cref="AppSettings"/> to
-    /// %LOCALAPPDATA%\CsOverlay\settings.json.
+    /// %LOCALAPPDATA%\BetterCaptions\settings.json.
     /// </summary>
     public sealed class SettingsService
     {
@@ -22,7 +22,7 @@ namespace CsOverlay.Services
         {
             string directory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CsOverlay");
+                "BetterCaptions");
 
             Directory.CreateDirectory(directory);
             _settingsPath = Path.Combine(directory, "settings.json");

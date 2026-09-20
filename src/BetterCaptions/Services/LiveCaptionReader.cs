@@ -6,7 +6,7 @@ using System.Threading;
 using System.Windows.Automation;
 using System.Windows.Threading;
 
-namespace CsOverlay.Services
+namespace BetterCaptions.Services
 {
     /// <summary>
     /// Polls Windows Live Captions (LiveCaptions.exe) via UI Automation and publishes
@@ -220,7 +220,7 @@ namespace CsOverlay.Services
             var worker = new Thread(() => PollLoop(generation))
             {
                 IsBackground = true,
-                Name = "CsOverlay.LiveCaptionReader"
+                Name = "BetterCaptions.LiveCaptionReader"
             };
 
             // All UIA work stays on this dedicated MTA thread; the WPF UI thread must
