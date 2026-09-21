@@ -1,17 +1,21 @@
 using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
+using System.IO;
 using System.Windows.Forms;
-using BetterCaptions.Interop;
 
 namespace BetterCaptions.Services
 {
     /// <summary>
-    /// System tray presence. The icon is generated at runtime so the app has no
-    /// dependency on an external .ico file.
+    /// System tray presence. The tray shows the app's real icon (Assets/app.ico, embedded
+    /// in this assembly): the exact small-size frame is loaded so the tray is crisp at the
+    /// current DPI, rather than a generated placeholder scaled down from a larger image.
     /// </summary>
     public sealed class TrayIconService : IDisposable
     {
+        // Logical name of the EmbeddedResource produced by <EmbeddedResource Include="Assets\app.ico" />
+        // (RootNamespace + folder path).
+        private const string AppIconResourceName = "BetterCaptions.Assets.app.ico";
+
         private readonly NotifyIcon _notifyIcon;
         private readonly Icon _icon;
         private readonly ContextMenuStrip _menu;
@@ -25,7 +29,7 @@ namespace BetterCaptions.Services
 
         public TrayIconService()
         {
-            _icon = CreateTrayIcon();
+            _icon = LoadAppIcon();
 
             _menu = new ContextMenuStrip();
             _menu.Items.Add("Show overlay", null, (_, __) => ShowRequested?.Invoke());
@@ -85,36 +89,49 @@ namespace BetterCaptions.Services
             _notifyIcon.Text = safe;
         }
 
-        private static Icon CreateTrayIcon()
+        /// <summary>
+        /// Loads the app icon from the embedded multi-resolution <c>Assets/app.ico</c>,
+        /// picking the frame that matches the tray's small-icon size (so Windows never has
+        /// to scale a larger bitmap down). Falls back to the running exe's own icon and
+        /// finally to a private copy of the default application icon, so the tray always
+        /// has something valid to show.
+        /// </summary>
+        private static Icon LoadAppIcon()
         {
-            using var bitmap = new Bitmap(16, 16);
-
-            using (Graphics graphics = Graphics.FromImage(bitmap))
-            {
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                graphics.Clear(System.Drawing.Color.Transparent);
-
-                using var background = new SolidBrush(System.Drawing.Color.FromArgb(230, 20, 22, 28));
-                graphics.FillEllipse(background, 0, 0, 15, 15);
-
-                using var border = new Pen(System.Drawing.Color.FromArgb(255, 60, 170, 255), 1.5f);
-                graphics.DrawEllipse(border, 1.5f, 1.5f, 12f, 12f);
-
-                using var cross = new Pen(System.Drawing.Color.White, 1.5f);
-                graphics.DrawLine(cross, 4f, 8f, 11f, 8f);
-                graphics.DrawLine(cross, 8f, 4f, 8f, 11f);
-            }
-
-            IntPtr handle = bitmap.GetHicon();
             try
             {
-                using Icon temporary = Icon.FromHandle(handle);
-                return (Icon)temporary.Clone();
+                using Stream? stream = typeof(TrayIconService).Assembly
+                    .GetManifestResourceStream(AppIconResourceName);
+
+                if (stream is not null)
+                {
+                    return new Icon(stream, SystemInformation.SmallIconSize);
+                }
             }
-            finally
+            catch
             {
-                NativeMethods.DestroyIcon(handle);
+                // Resource missing or unreadable: fall through to the exe icon.
             }
+
+            try
+            {
+                string? exePath = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    Icon? extracted = Icon.ExtractAssociatedIcon(exePath);
+                    if (extracted is not null)
+                    {
+                        return extracted;
+                    }
+                }
+            }
+            catch
+            {
+                // Exe icon unavailable: fall through to the system default.
+            }
+
+            // Clone so disposing the tray icon never disposes the shared system icon.
+            return (Icon)SystemIcons.Application.Clone();
         }
 
         public void Dispose()

@@ -9,6 +9,13 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+      App icon: a multi-resolution .ico (16/24/32/48/64/128/256) that the built exe
+      carries, so the taskbar, Alt-Tab and every WPF window title bar show the real
+      icon. It is ALSO embedded as a resource so the tray icon can load the exact
+      small-size frame at runtime instead of a scaled placeholder.
+    -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AssemblyName>BetterCaptions</AssemblyName>
     <!--
       WFO0003 is a WinForms analyzer rule asking for "ApplicationHighDpiMode" instead of
@@ -27,6 +34,13 @@
     -->
     <PackageReference Include="NAudio.Core" Version="3.1.0" />
     <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded (logical name BetterCaptions.Assets.app.ico) so the tray icon can load
+         a specific frame size; the ApplicationIcon above only sets the exe's Win32 icon. -->
+    <None Remove="Assets\app.ico" />
+    <EmbeddedResource Include="Assets\app.ico" />
   </ItemGroup>
 
 </Project>
