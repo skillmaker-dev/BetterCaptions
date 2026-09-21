@@ -131,14 +131,14 @@ Settings live in `%LOCALAPPDATA%\BetterCaptions\settings.json`. Most are editabl
 | `PanelX` | `0` | drag | Panel left offset in device-independent pixels, saved when the panel is dragged. |
 | `PanelY` | `0` | drag | Panel top offset in device-independent pixels. |
 | `PanelMaxWidth` | `640` | width grip | Maximum panel width in device-independent pixels. The panel fits its text up to this cap. |
-| `PanelCenteredHorizontally` | `false` | Options (Panel) | Centres the panel horizontally; the vertical position is unchanged. |
+| `PanelCenteredHorizontally` | `true` | Options (Panel) | Centres the panel horizontally; the vertical position is unchanged. |
 | `CaptionTextColor` | `"#FFFFFFFF"` | Options (Captions) | Caption text colour as `#AARRGGBB`. Older rows use the same colour at about 75% alpha. |
 | `CaptionBackgroundEnabled` | `true` | settings.json | When false, caption bars paint no background at all. |
 | `CaptionBackgroundColor` | `"#8C000000"` | Options (Captions) | Caption bar colour. The Options window edits the colour and the background opacity slider edits the alpha channel. |
 | `CaptionFontSize` | `20` | Options (Captions) | Caption glyph size in device-independent pixels. Slider range 12 to 40. |
 | `CaptionLineGap` | `0` | Options (Captions) | Extra vertical space between caption rows, in device-independent pixels. Slider range 0 to 30. |
 | `CaptionMaxRows` | `3` | Options (Captions) | Maximum number of caption rows shown. Slider range 1 to 10. Reduced if the full window would not fit the work area. |
-| `CaptionTextCentered` | `false` | Options (Captions) | Centres each caption row within the panel instead of leaving rows flush left. |
+| `CaptionTextCentered` | `true` | Options (Captions) | Centres each caption row within the panel instead of leaving rows flush left. |
 | `HideLiveCaptionsWindow` | `false` | Options (Captions) | Moves the real Live Captions window off the visible desktop while BetterCaptions runs, so only the overlay's captions are visible. It keeps running, and is restored on exit. |
 | `ShowOnlyWhenGameRunning` | `false` | settings.json | Shows the overlay only while a tracked game window exists. |
 | `HotkeyCtrl` / `HotkeyShift` / `HotkeyAlt` / `HotkeyKey` | `true` / `true` / `false` / `0x4F` | Options (Hotkey) | The global hotkey. The defaults are Ctrl and Shift with virtual-key `0x4F`, which is the letter O: Ctrl+Shift+O. Changeable from the Options window. |

@@ -49,9 +49,9 @@ namespace BetterCaptions.Models
         /// <summary>
         /// When true the panel is horizontally centered within the overlay window
         /// (keeping its Y position); the manually dragged X in <see cref="PanelX"/> is
-        /// preserved so unchecking restores it.
+        /// preserved so unchecking restores it. Default true.
         /// </summary>
-        public bool PanelCenteredHorizontally { get; set; } = false;
+        public bool PanelCenteredHorizontally { get; set; } = true;
 
         /// <summary>
         /// Caption text colour as a hex #AARRGGBB string. The newest caption line uses
@@ -98,13 +98,13 @@ namespace BetterCaptions.Models
         public int CaptionMaxRows { get; set; } = 3;
 
         /// <summary>
-        /// When true each caption bar centres its text; when false the text is left
-        /// aligned (the default, matching the original look). Each bar auto-fits its own
-        /// text, so for a single-row caption the text exactly fills the bar and the
-        /// alignment is invisible; it shows on a wrapped caption, where the shorter
-        /// continuation row is centred instead of left aligned.
+        /// When true each caption bar centres its text (the default); when false the text
+        /// is left aligned. Each bar auto-fits its own text, so for a single-row caption
+        /// the text exactly fills the bar and the alignment is invisible; it shows on a
+        /// wrapped caption, where the shorter continuation row is centred instead of left
+        /// aligned.
         /// </summary>
-        public bool CaptionTextCentered { get; set; } = false;
+        public bool CaptionTextCentered { get; set; } = true;
 
         /// <summary>
         /// When true, BetterCaptions minimizes the Windows Live Captions window (and marks it as
