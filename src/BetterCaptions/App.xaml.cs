@@ -397,25 +397,104 @@ namespace BetterCaptions
                 return false;
             }
 
+            // Register surfaces a clear error + Win32 code; the loop simply moves on.
+            return _hotkey.Register(
+                BuildHotkeyModifiers(candidate.Ctrl, candidate.Shift, candidate.Alt), candidate.Key, out _);
+        }
+
+        /// <summary>
+        /// Builds the Win32 modifier mask for a combination. This is the single source of the
+        /// Ctrl/Shift/Alt to MOD_* mapping, shared by the startup registration and the Options
+        /// hotkey editor.
+        /// </summary>
+        private static uint BuildHotkeyModifiers(bool ctrl, bool shift, bool alt)
+        {
             uint modifiers = 0;
 
-            if (candidate.Ctrl)
+            if (ctrl)
             {
                 modifiers |= NativeMethods.MOD_CONTROL;
             }
 
-            if (candidate.Shift)
+            if (shift)
             {
                 modifiers |= NativeMethods.MOD_SHIFT;
             }
 
-            if (candidate.Alt)
+            if (alt)
             {
                 modifiers |= NativeMethods.MOD_ALT;
             }
 
-            // Register surfaces a clear error + Win32 code; the loop simply moves on.
-            return _hotkey.Register(modifiers, candidate.Key, out _);
+            return modifiers;
+        }
+
+        /// <summary>
+        /// Switches the global hotkey to the supplied combination, LIVE. Called by the Options
+        /// hotkey editor. On success the new combination is registered, persisted, and
+        /// reflected in the tray tooltip.
+        ///
+        /// On failure the PREVIOUS working hotkey is put back, so a combination that is already
+        /// taken never leaves the user without a hotkey; <paramref name="error"/> carries a
+        /// human-readable reason for the editor to show.
+        /// </summary>
+        public bool TryChangeHotkey(bool ctrl, bool shift, bool alt, uint virtualKey, out string? error)
+        {
+            error = null;
+
+            if (_hotkey is null || _settingsService is null)
+            {
+                error = "The hotkey service is not available.";
+                return false;
+            }
+
+            // Defence in depth: the editor refuses this already, but a bare key would be
+            // captured system-wide, so never register one.
+            if (!ctrl && !shift && !alt)
+            {
+                error = "Include at least one modifier (Ctrl, Alt or Shift). A bare key would be captured system-wide and block that key in every other app.";
+                return false;
+            }
+
+            AppSettings settings = _settingsService.Settings;
+
+            // Remember the currently working combination so it can be restored on failure.
+            bool previousCtrl = settings.HotkeyCtrl;
+            bool previousShift = settings.HotkeyShift;
+            bool previousAlt = settings.HotkeyAlt;
+            uint previousKey = settings.HotkeyKey;
+
+            if (_hotkey.Register(BuildHotkeyModifiers(ctrl, shift, alt), virtualKey, out _))
+            {
+                settings.HotkeyCtrl = ctrl;
+                settings.HotkeyShift = shift;
+                settings.HotkeyAlt = alt;
+                settings.HotkeyKey = virtualKey;
+                _settingsService.Save();
+
+                ApplyHotkeyDisplay(new HotkeyCandidate(ctrl, shift, alt, virtualKey));
+                return true;
+            }
+
+            // The combination is taken. Restore the previous working hotkey so the user is
+            // never left without one.
+            string previousText = HotkeyFormatter.Format(previousCtrl, previousShift, previousAlt, previousKey);
+
+            if (_hotkey.Register(
+                    BuildHotkeyModifiers(previousCtrl, previousShift, previousAlt), previousKey, out _))
+            {
+                ApplyHotkeyDisplay(new HotkeyCandidate(previousCtrl, previousShift, previousAlt, previousKey));
+                error = $"That combination is already in use by another application. Still using {previousText}.";
+            }
+            else
+            {
+                // Extremely unlikely: the previous combination became unavailable too. Be
+                // honest in the tooltip rather than claim a hotkey that is not registered.
+                _tray?.SetTooltip("BetterCaptions \u2014 no hotkey");
+                error = "That combination is already in use by another application, and the previous hotkey could not be restored. Use the tray icon to toggle the overlay, or choose another combination.";
+            }
+
+            return false;
         }
 
         private void ApplyHotkeyDisplay(HotkeyCandidate candidate)

@@ -317,8 +317,19 @@ namespace BetterCaptions
         }
 
         /// <summary>
-        /// Applies WS_EX_TRANSPARENT when either the app wants click-through OR the audio
-        /// indicators are showing and the pointer is away from the caption panel.
+        /// Applies WS_EX_TRANSPARENT when ANY of these wants it:
+        ///   - the app's idle gating (<c>_clickThroughWanted</c>: hidden overlay with
+        ///     ClickThroughWhenIdle on);
+        ///   - the audio indicators are showing and the pointer is away from the panel
+        ///     (<c>_indicatorClickThrough</c>);
+        ///   - the user asked the VISIBLE overlay to be click-through
+        ///     (<see cref="AppSettings.ClickThroughWhileVisible"/>).
+        ///
+        /// This is the ONE place that writes the style, so the three inputs are reconciled
+        /// rather than fighting: the user preference is OR'd last, so it wins even while the
+        /// pointer is over the panel - which is exactly why the panel cannot be dragged or
+        /// resized while it is on, and why the indicator layer's per-tick reconciliation
+        /// cannot turn interactivity back on underneath it.
         ///
         /// This is the real fix for the indicator layer swallowing clicks: the overlay is an
         /// AllowsTransparency (layered) window, and layered windows hit-test PER PIXEL, so any
@@ -327,7 +338,9 @@ namespace BetterCaptions
         /// </summary>
         private void ApplyClickThrough()
         {
-            bool enabled = _clickThroughWanted || _indicatorClickThrough;
+            bool enabled = _clickThroughWanted
+                || _indicatorClickThrough
+                || (_overlayVisible && _settingsService.Settings.ClickThroughWhileVisible);
 
             if (_handle == IntPtr.Zero || _clickThrough == enabled)
             {

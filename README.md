@@ -22,9 +22,10 @@ It is not expected. Bug reports, testing, and pointing someone who needs it at t
 - Live Options window with a preview that uses the same rendering rules as the overlay.
 - Caption text colour, background colour and opacity, font size, number of visible rows, gap between rows and text alignment.
 - The caption panel auto-sizes its width to its text up to a configurable maximum. Drag it to move it; hover it and use the right-edge grip to change the maximum width. It can be centred horizontally.
+- The visible overlay can be made click-through, so clicks reach the game behind it. The panel cannot be moved while that is on.
 - Option to move the real Windows Live Captions window off-screen so only the overlay's captions are visible. It is restored on exit.
 - Tray icon: Show overlay, Hide overlay, Show options, Exit. Double-click the icon toggles the overlay.
-- Global hotkey to toggle the overlay. The default is Ctrl+Shift+O. If that combination is already taken, BetterCaptions tries a fallback list and persists the one that worked.
+- Global hotkey to toggle the overlay, changeable in the Options window. The default is Ctrl+Shift+O. If that combination is already taken, BetterCaptions tries a fallback list and persists the one that worked.
 - The overlay snaps to the tracked game window and returns to the desktop full-screen area when the game window is minimized or gone.
 - The overlay never activates, so it cannot take focus from the game.
 - Settings are saved to `%LOCALAPPDATA%\BetterCaptions\settings.json`.
@@ -92,17 +93,24 @@ If Ctrl+Shift+O is already registered by another application, BetterCaptions tri
 3. Ctrl+Alt+Shift+O
 4. Ctrl+Alt+F10
 
-A tray balloon reports which combination was bound. If none of them can be registered, the app keeps running and the tray icon remains the way to toggle the overlay. The hotkey is stored in `settings.json`; there is no hotkey editor in the Options window.
+A tray balloon reports which combination was bound. If none of them can be registered, the app keeps running and the tray icon remains the way to toggle the overlay.
+
+The hotkey is stored in `settings.json` and can be changed in the Options window: click the hotkey box and press the new combination. It is registered and saved immediately, and the tray tooltip updates to match. At least one of Ctrl, Alt or Shift is required; a bare key is refused, because registering it would swallow that key in every other application. If the combination is already taken by another app, the previous hotkey stays in force and the window says so.
 
 ### Options window
 
-Open it from the tray menu (Show options). It is a normal desktop window, not an overlay, and it is never topmost. Changes are saved and applied immediately. It has five sections:
+Open it from the tray menu (Show options). It is a normal desktop window, not an overlay, and it is never topmost. Changes are saved and applied immediately. It has six sections:
 
 - **Preview**: sample caption text rendered with the same wrapping and row rules the overlay uses, over a photo backdrop.
 - **Overlay**: a Show overlay checkbox, kept in step with the tray and hotkey.
+- **Hotkey**: shows the bound combination and lets you set a new one by pressing it. At least one of Ctrl, Alt or Shift is required.
 - **Captions**: text colour, background colour, background opacity, gap, font size, max rows, center text, and hiding the Windows Live Captions window.
-- **Panel**: centres the overlay panel horizontally.
+- **Panel**: centres the overlay panel horizontally, and a click-through option for the visible overlay.
 - **Audio**: directional audio indicators on/off, threshold, sensitivity, loudness scale, and a live capture status line.
+
+### Click-through
+
+"Click through the visible overlay" (Panel section) makes the shown overlay pass mouse clicks through to the game underneath, so you can press a game button that is behind the caption panel without hiding it first. While it is on, the panel cannot be dragged or resized, because those need mouse input; turn the option back off in the Options window to move the panel again. The window can always be opened from the tray icon, so this is never a one-way trip.
 
 ### Overlay panel
 
@@ -118,6 +126,7 @@ Settings live in `%LOCALAPPDATA%\BetterCaptions\settings.json`. Most are editabl
 | --- | --- | --- | --- |
 | `OverlayVisible` | `false` | Options / tray / hotkey | Whether the overlay is shown. The app starts hidden by default and honours this value on the next launch. |
 | `ClickThroughWhenIdle` | `true` | settings.json | Makes the overlay window click-through while it is hidden, so it cannot intercept input when not shown. |
+| `ClickThroughWhileVisible` | `false` | Options (Panel) | Keeps the visible overlay click-through, so clicks pass through the panel to the game behind it. The panel cannot be dragged or resized while this is on. |
 | `OverlayOpacity` | `0.9` | settings.json | Present in the settings model but not read by any current code path. Changing it has no effect. |
 | `PanelX` | `0` | drag | Panel left offset in device-independent pixels, saved when the panel is dragged. |
 | `PanelY` | `0` | drag | Panel top offset in device-independent pixels. |
@@ -132,7 +141,7 @@ Settings live in `%LOCALAPPDATA%\BetterCaptions\settings.json`. Most are editabl
 | `CaptionTextCentered` | `false` | Options (Captions) | Centres each caption row within the panel instead of leaving rows flush left. |
 | `HideLiveCaptionsWindow` | `false` | Options (Captions) | Moves the real Live Captions window off the visible desktop while BetterCaptions runs, so only the overlay's captions are visible. It keeps running, and is restored on exit. |
 | `ShowOnlyWhenGameRunning` | `false` | settings.json | Shows the overlay only while a tracked game window exists. |
-| `HotkeyCtrl` / `HotkeyShift` / `HotkeyAlt` / `HotkeyKey` | `true` / `true` / `false` / `0x4F` | settings.json | The global hotkey. The defaults are Ctrl and Shift with virtual-key `0x4F`, which is the letter O: Ctrl+Shift+O. |
+| `HotkeyCtrl` / `HotkeyShift` / `HotkeyAlt` / `HotkeyKey` | `true` / `true` / `false` / `0x4F` | Options (Hotkey) | The global hotkey. The defaults are Ctrl and Shift with virtual-key `0x4F`, which is the letter O: Ctrl+Shift+O. Changeable from the Options window. |
 | `AudioIndicatorsEnabled` | `false` | Options (Audio) | Turns the directional audio indicators on. Off by default. |
 | `AudioThresholdHz` | `1500` | Options (Audio) | High-pass cutoff in Hz. Only energy above this frequency can light an indicator. Slider range 200 to 8000. |
 | `AudioSensitivity` | `1.0` | Options (Audio) | Linear gain applied before the dB mapping. Affects both indicator brightness and colour. Slider range 0.25 to 4. |

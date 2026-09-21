@@ -15,6 +15,14 @@ namespace BetterCaptions.Models
         /// </summary>
         public bool ClickThroughWhenIdle { get; set; } = true;
 
+        /// <summary>
+        /// When true the overlay stays click-through (WS_EX_TRANSPARENT) even while it is
+        /// VISIBLE, so clicks pass through the caption panel to whatever is behind it. The
+        /// panel cannot be dragged or resized while this is on, because those need mouse
+        /// input; turn it off in Options to move the panel again. Default false.
+        /// </summary>
+        public bool ClickThroughWhileVisible { get; set; } = false;
+
         /// <summary>Opacity of the overlay window (0.1 - 1.0).</summary>
         public double OverlayOpacity { get; set; } = 0.9;
 

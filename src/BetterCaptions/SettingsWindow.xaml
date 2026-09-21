@@ -10,7 +10,8 @@
         ShowInTaskbar="True"
         Background="#FFF4F4F4"
         FontFamily="Segoe UI"
-        FontSize="12">
+        FontSize="12"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -95,6 +96,31 @@
 
                 <CheckBox x:Name="ShowOverlayCheck" Content="Show overlay" Margin="0,2,0,0"
                           Checked="ShowOverlayCheck_Changed" Unchecked="ShowOverlayCheck_Changed" />
+
+                <!-- Hotkey: shows the bound combination and captures a new one. -->
+                <TextBlock Text="Hotkey" Style="{StaticResource SectionHeader}" />
+
+                <Grid Margin="0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Toggle overlay" Style="{StaticResource RowLabel}" />
+                    <Button x:Name="HotkeyButton" Grid.Column="1"
+                            HorizontalAlignment="Left"
+                            MinWidth="150"
+                            Padding="8,3"
+                            Cursor="Hand"
+                            Content="Ctrl+Shift+O"
+                            Click="HotkeyButton_Click" />
+                </Grid>
+
+                <TextBlock x:Name="HotkeyStatusText"
+                           Margin="150,4,0,0"
+                           FontSize="11"
+                           Foreground="#FF555555"
+                           TextWrapping="Wrap"
+                           Text="Click the box, then press the new combination. At least one of Ctrl, Alt or Shift is required." />
 
                 <TextBlock Text="Captions" Style="{StaticResource SectionHeader}" />
 
@@ -223,6 +249,18 @@
 
                 <CheckBox x:Name="CenterPanelCheck" Content="Center panel on screen" Margin="0,2,0,0"
                           Checked="CenterPanelCheck_Changed" Unchecked="CenterPanelCheck_Changed" />
+
+                <CheckBox x:Name="ClickThroughWhileVisibleCheck"
+                          Content="Click through the visible overlay"
+                          Margin="0,10,0,0"
+                          Checked="ClickThroughWhileVisibleCheck_Changed"
+                          Unchecked="ClickThroughWhileVisibleCheck_Changed" />
+
+                <TextBlock Margin="20,2,0,0"
+                           FontSize="11"
+                           Foreground="#FF555555"
+                           TextWrapping="Wrap"
+                           Text="Clicks pass through the visible overlay to the game underneath, so the panel cannot be moved or resized while this is on. Turn it off here to move the panel again." />
 
                 <!-- Directional audio indicators (the user is hard of hearing; this turns
                      above-threshold system audio into a peripheral direction cue). -->

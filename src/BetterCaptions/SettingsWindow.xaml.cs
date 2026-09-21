@@ -29,6 +29,11 @@ namespace BetterCaptions
         // Border shown briefly when the hex box holds something unparseable.
         private static readonly Brush InvalidHexBrush = CreateFrozenBrush(Color.FromRgb(0xD1, 0x34, 0x38));
 
+        // Hotkey editor status colours: a neutral hint, and the same red used for rejected
+        // input. The status line explains refusals ("need a modifier") and taken combinations.
+        private static readonly Brush HotkeyInfoBrush = CreateFrozenBrush(Color.FromRgb(0x55, 0x55, 0x55));
+        private static readonly Brush HotkeyErrorBrush = InvalidHexBrush;
+
         // Fixed, neutral sample text for the live preview. Long enough (at the default font
         // size and panel width) to wrap into roughly six or more rows, so changing Max rows,
         // Gap, Font size, colours and Center text all visibly change the preview.
@@ -68,6 +73,10 @@ namespace BetterCaptions
         // this flips to false.
         private bool _initializing = true;
 
+        // True while the hotkey box is waiting for the user to press a combination. While
+        // set, the window's PreviewKeyDown swallows keys and routes them to the editor.
+        private bool _capturingHotkey;
+
         public SettingsWindow(SettingsService settingsService)
         {
             _settingsService = settingsService;
@@ -104,6 +113,7 @@ namespace BetterCaptions
 
             CenterTextCheck.IsChecked = settings.CaptionTextCentered;
             CenterPanelCheck.IsChecked = settings.PanelCenteredHorizontally;
+            ClickThroughWhileVisibleCheck.IsChecked = settings.ClickThroughWhileVisible;
             HideLiveCaptionsCheck.IsChecked = settings.HideLiveCaptionsWindow;
 
             AudioIndicatorsCheck.IsChecked = settings.AudioIndicatorsEnabled;
@@ -120,6 +130,9 @@ namespace BetterCaptions
 
             // Seed the show/hide checkbox from the overlay's real visibility.
             RefreshOverlayCheck();
+
+            // Seed the hotkey box from the persisted combination.
+            RefreshHotkeyDisplay();
         }
 
         private void NotifyChanged()
@@ -433,6 +446,23 @@ namespace BetterCaptions
         }
 
         /// <summary>
+        /// Writes <see cref="AppSettings.ClickThroughWhileVisible"/>. The overlay reconciles
+        /// this into its single click-through decision the next time App re-applies settings
+        /// (OnSettingsChanged calls SetClickThrough), so it takes effect immediately. The
+        /// note under the checkbox says the panel cannot be moved while this is on.
+        /// </summary>
+        private void ClickThroughWhileVisibleCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            _settingsService.Settings.ClickThroughWhileVisible = ClickThroughWhileVisibleCheck.IsChecked == true;
+            NotifyChanged();
+        }
+
+        /// <summary>
         /// Writes <see cref="AppSettings.HideLiveCaptionsWindow"/>; a change here is
         /// live-applied by the app (it hides or restores the Live Captions window).
         /// </summary>
@@ -446,6 +476,159 @@ namespace BetterCaptions
             _settingsService.Settings.HideLiveCaptionsWindow = HideLiveCaptionsCheck.IsChecked == true;
             NotifyChanged();
         }
+
+        // ------------------------------------------------------------------
+        // Hotkey editor
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Puts the hotkey box into capture mode. The window's PreviewKeyDown then swallows
+        /// the next combination and routes it here, so the user simply presses the keys they
+        /// want; the box itself is just a button that displays the current combination.
+        /// </summary>
+        private void HotkeyButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_initializing || _settingsService is null)
+            {
+                return;
+            }
+
+            BeginHotkeyCapture();
+        }
+
+        private void BeginHotkeyCapture()
+        {
+            _capturingHotkey = true;
+            HotkeyButton.Content = "Press a combination...";
+            HotkeyStatusText.Foreground = HotkeyInfoBrush;
+            HotkeyStatusText.Text = "Press the new combination now (Esc cancels). Include at least one of Ctrl, Alt or Shift.";
+            HotkeyButton.Focus();
+        }
+
+        /// <summary>
+        /// Captures the combination while the box is in capture mode. It reads the modifier
+        /// state at the moment a non-modifier key goes down, which is the only reliable way to
+        /// know what the user is holding. Escape cancels; a bare key (no modifier) is refused
+        /// with a plain reason and capture continues.
+        /// </summary>
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!_capturingHotkey)
+            {
+                return;
+            }
+
+            // While capturing, the editor owns the keyboard: swallow every key so it cannot
+            // activate other controls, scroll, or type into the hex boxes.
+            e.Handled = true;
+
+            if (e.Key == Key.Escape)
+            {
+                CancelHotkeyCapture();
+                return;
+            }
+
+            // With Alt held, WPF reports the real key in SystemKey rather than Key.
+            Key pressed = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            // A lone modifier press is not a combination; keep waiting.
+            if (IsModifierKey(pressed))
+            {
+                return;
+            }
+
+            bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+            bool alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
+
+            if (!ctrl && !shift && !alt)
+            {
+                // Refuse a bare key: registering it would swallow that key system-wide.
+                HotkeyStatusText.Foreground = HotkeyErrorBrush;
+                HotkeyStatusText.Text = "Include at least one modifier (Ctrl, Alt or Shift). A bare key would be captured system-wide and block that key in every other app.";
+                return;
+            }
+
+            uint virtualKey = (uint)KeyInterop.VirtualKeyFromKey(pressed);
+            if (virtualKey == 0)
+            {
+                HotkeyStatusText.Foreground = HotkeyErrorBrush;
+                HotkeyStatusText.Text = "That key cannot be used as a global hotkey. Try another combination.";
+                return;
+            }
+
+            ApplyHotkeyChange(ctrl, shift, alt, virtualKey);
+        }
+
+        /// <summary>
+        /// Asks App to register and persist the combination live. On success the box shows the
+        /// new combination. On failure the previous hotkey is still in force (App puts it back)
+        /// and the reason is shown; capture stays on so the user can try another immediately.
+        /// </summary>
+        private void ApplyHotkeyChange(bool ctrl, bool shift, bool alt, uint virtualKey)
+        {
+            string attempted = HotkeyFormatter.Format(ctrl, shift, alt, virtualKey);
+
+            if (Application.Current is not App app)
+            {
+                EndHotkeyCapture();
+                HotkeyStatusText.Foreground = HotkeyErrorBrush;
+                HotkeyStatusText.Text = "The hotkey could not be changed right now.";
+                return;
+            }
+
+            if (app.TryChangeHotkey(ctrl, shift, alt, virtualKey, out string? error))
+            {
+                EndHotkeyCapture();
+                RefreshHotkeyDisplay();
+                HotkeyStatusText.Foreground = HotkeyInfoBrush;
+                HotkeyStatusText.Text = $"Hotkey set to {attempted}. It is active immediately and saved.";
+            }
+            else
+            {
+                // Keep capturing so another combination can be tried at once. The button still
+                // reads "Press a combination...", so it stays clear that the editor is waiting.
+                HotkeyStatusText.Foreground = HotkeyErrorBrush;
+                HotkeyStatusText.Text = error ?? "That combination is already in use by another application.";
+            }
+        }
+
+        private void CancelHotkeyCapture()
+        {
+            EndHotkeyCapture();
+            RefreshHotkeyDisplay();
+        }
+
+        private void EndHotkeyCapture()
+        {
+            _capturingHotkey = false;
+        }
+
+        /// <summary>Repaints the hotkey box from the persisted combination.</summary>
+        private void RefreshHotkeyDisplay()
+        {
+            if (HotkeyButton is null || _settingsService is null)
+            {
+                return;
+            }
+
+            AppSettings settings = _settingsService.Settings;
+            HotkeyButton.Content = HotkeyFormatter.Format(
+                settings.HotkeyCtrl, settings.HotkeyShift, settings.HotkeyAlt, settings.HotkeyKey);
+
+            HotkeyStatusText.Foreground = HotkeyInfoBrush;
+            HotkeyStatusText.Text = "Click the box, then press the new combination. At least one of Ctrl, Alt or Shift is required.";
+        }
+
+        private static bool IsModifierKey(Key key) => key switch
+        {
+            Key.LeftCtrl or Key.RightCtrl => true,
+            Key.LeftShift or Key.RightShift => true,
+            Key.LeftAlt or Key.RightAlt => true,
+            Key.LWin or Key.RWin => true,
+            Key.System => true,
+            _ => false
+        };
 
         // ------------------------------------------------------------------
         // Audio
